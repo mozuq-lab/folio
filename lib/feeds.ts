@@ -2,7 +2,8 @@ import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import type { Article, Feed } from './types.ts';
 
 const MAX_BYTES = 2 * 1024 * 1024;
-const MAX_ARTICLES = 60;
+// Upper bound per feed; most feeds publish far fewer items. Articles sync to D1 (4MiB library cap).
+export const MAX_ARTICLES = 200;
 type XmlNode = Record<string, unknown>;
 type ParsedFeed = { feed: Feed; articles: Article[] };
 

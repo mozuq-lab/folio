@@ -92,7 +92,7 @@ OpenAIとOpenRouterへの通信は `redirect: manual` を指定し、別URLへ�
 
 ## 取得とセキュリティ
 
-- RSS／Atom：公開HTTPS、redirect再検査、10秒timeout、2MiB／60記事、XML検証、DOCTYPE拒否、5分cache。
+- RSS／Atom：公開HTTPS、redirect再検査、10秒timeout、2MiB／1フィード200記事、XML検証、DOCTYPE拒否、5分cache。
 - 公開記事本文：HTTPSとredirect再検査、10秒／2MiB、Readabilityによるテキスト抽出。任意のHTMLを画面に描画しません。
 - OPML：1MiB／500フィード、DOCTYPE／entityと危険URLを拒否。
 - 同期・AI・本文API：Cloudflare Accessの認証を検証し、書き込みはsame-originを確認します。

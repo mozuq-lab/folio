@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchFeed, isSafeFeedUrl, parseFeed } from '../lib/feeds.ts';
+import { MAX_ARTICLES, fetchFeed, isSafeFeedUrl, parseFeed } from '../lib/feeds.ts';
 import { GET as routeGET } from '../app/api/feeds/route.ts';
 import { runWithUser } from '../lib/auth/context.ts';
 
@@ -85,10 +85,11 @@ test('linkなしの記事では絶対URLのpermalink GUIDだけを採用する',
   assert.equal(articles[0].url, 'https://example.com/article');
 });
 
-test('記事が60件を超えるfeedと重複記事を制限する', () => {
-  const items = Array.from({ length: 65 }, (_, i) => `<item><title>記事${i}</title><link>https://example.com/${i}</link></item>`).join('');
+test('記事がMAX_ARTICLES（200件）を超えるfeedと重複記事を制限する', () => {
+  assert.equal(MAX_ARTICLES, 200);
+  const items = Array.from({ length: 205 }, (_, i) => `<item><title>記事${i}</title><link>https://example.com/${i}</link></item>`).join('');
   const { articles } = parseFeed(`<rss><channel><title>通信</title>${items}</channel></rss>`, 'https://example.com/feed');
-  assert.equal(articles.length, 60);
+  assert.equal(articles.length, 200);
   const duplicate = '<item><title>同じ記事</title><link>https://example.com/one</link></item>';
   assert.equal(parseFeed(`<rss><channel><title>通信</title>${duplicate}${duplicate}</channel></rss>`, 'https://example.com/feed').articles.length, 1);
 });

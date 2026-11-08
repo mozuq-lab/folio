@@ -9,6 +9,9 @@ import { applyFeedback } from '@/lib/recommendations';
 import { mergeArticles, mergeSubscribedArticles } from '@/lib/storage';
 import { retainedArticleIds } from '@/lib/retention';
 import { useLibrary } from '@/hooks/use-library';
+import { useArticleLayout } from '@/hooks/use-article-layout';
+import type { ArticleLayout } from '@/lib/article-layout';
+import { LoadMoreSentinel } from '@/components/folio/load-more-sentinel';
 import { rankPersonalized, mixExploration, toArticle } from '@/lib/personalization';
 import type { IntelligentArticle } from '@/lib/personalization';
 import { selectExploration, applyNaturalProfile } from '@/lib/discovery';
@@ -36,7 +39,6 @@ function Modal({title,children,onClose,wide=false,drawer=false}:{title:string;ch
  return <dialog ref={ref} aria-label={title} className={`modal ${wide?'modal-wide':''} ${drawer?'article-drawer':''}`} onCancel={e=>{e.preventDefault();onClose();}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}><div className="modal-header"><h2>{title}</h2><button className="icon-button" aria-label="閉じる" onClick={onClose}><X size={20}/></button></div>{children}</dialog>;
 }
 
-type ArticleLayout='grid'|'list'|'compact';
 function ArticleCard({article,index,feed,saved,read,liked,onOpen,onSave,onFeedback,onToggleRead,onRead,layout,lens}:{article:IntelligentArticle;index:number;feed:Feed|undefined;saved:boolean;read:boolean;liked:boolean;onOpen:()=>void;onSave:()=>void;onFeedback:(value:'like'|'dislike')=>void;onToggleRead:()=>void;onRead:()=>void;layout:ArticleLayout;lens:'interest'|'importance'}){
  const [imageFailed,setImageFailed]=useState(false);
  const sourceUrl=safeUrl(article.url);
@@ -73,10 +75,11 @@ export default function Home(){
  const [query,setQuery]=useState('');
  const [sort,setSort]=useState('recommended');
  const [unreadOnly,setUnreadOnly]=useState(false);
- const [layout,setLayout]=useState<ArticleLayout>('grid');
+ const [layout,setLayout]=useArticleLayout();
  const [modal,setModal]=useState<'feeds'|'preferences'|'backup'|null>(null);
  const [lens,setLens]=useState<'interest'|'importance'>('interest');
  const [visibleLimit,setVisibleLimit]=useState(30);
+ const loadMore=useCallback(()=>setVisibleLimit(n=>n+30),[]);
  const [aiStatuses,setAIStatuses]=useState<ProviderStatus[]>([]);
  const [aiBusy,setAIBusy]=useState(false);
  const [aiError,setAIError]=useState('');
@@ -189,7 +192,7 @@ export default function Home(){
     <div className="section-heading"><div className="section-title">{view==='for-you'?<Sparkles size={19}/>:view==='saved'?<Bookmark size={19}/>:<Rss size={19}/>}<h2>{query?`「${query}」の検索結果`:view==='for-you'?'あなたへのおすすめ':view==='saved'?'保存した記事':'記事一覧'}</h2><span className="article-count">{filtered.length}</span>{isSample&&<span className="sample-label">サンプル</span>}</div><div className="view-controls"><label className="sort-control"><ArrowDownWideNarrow size={14}/><select aria-label="記事の並び順" value={sort} onChange={e=>setSort(e.target.value)}><option value="recommended">おすすめ順</option><option value="latest">新しい順</option></select><ChevronDown size={11}/></label><div className="layout-toggle" role="group" aria-label="記事の表示形式"><button className={layout==='grid'?'active':''} aria-label="カード表示" title="カード表示" aria-pressed={layout==='grid'} onClick={()=>setLayout('grid')}><LayoutGrid size={15}/></button><button className={layout==='list'?'active':''} aria-label="リスト表示" title="リスト表示" aria-pressed={layout==='list'} onClick={()=>setLayout('list')}><List size={16}/></button><button className={layout==='compact'?'active':''} aria-label="コンパクト表示" title="コンパクト表示：見出しを1行で表示" aria-pressed={layout==='compact'} onClick={()=>setLayout('compact')}><Rows3 size={16}/></button></div></div></div>
     <div className="results-meta"><span>{isSample?'まずはサンプル記事で体験。更新すると実際のRSSを取得できます。':state.lastUpdated?`最終更新 ${relativeTime(state.lastUpdated)} · あなたの関心に合わせてセレクト`:'あなたの関心に合わせてセレクト'}</span><label className="unread-toggle"><input type="checkbox" checked={unreadOnly} onChange={e=>setUnreadOnly(e.target.checked)}/><span>未読のみ</span></label></div>
     {filtered.length?<div className={`articles-grid ${layout==='list'?'list-layout':layout==='compact'?'compact-layout':''}`}>{filtered.slice(0,visibleLimit).map((a,i)=><ArticleCard key={a.id} article={a} index={i} feed={state.feeds.find(f=>f.id===a.sourceId)} saved={state.saved.includes(a.id)} read={state.read.includes(a.id)} liked={state.feedback[a.id]==='like'} onOpen={()=>openArticle(a)} onSave={()=>save(a)} onFeedback={value=>feedback(a,value)} onToggleRead={()=>toggleRead(a)} onRead={()=>markRead(a)} layout={layout} lens={lens}/>)}</div>:<div className="empty-state"><span>{view==='saved'?<Bookmark size={28}/>:<Search size={28}/>}</span><h3>{view==='saved'&&state.saved.length===0?'気になる記事を、ここに。':'該当する記事がありません'}</h3><p>{view==='saved'&&state.saved.length===0?'記事のブックマークを押すと、あとで読むに保存できます。':'検索条件や興味の設定を変えてみてください。'}</p><button className="primary-button" onClick={()=>{setQuery('');setCategory('すべて');setUnreadOnly(false);if(view==='saved')changeView('for-you');}}>記事を見つける<ArrowRight size={15}/></button></div>}
-    {filtered.length>visibleLimit&&<button className="load-more-button" onClick={()=>setVisibleLimit(n=>n+30)}>さらに記事を読む<span>残り{filtered.length-visibleLimit}件</span><ChevronDown size={15}/></button>}
+    {filtered.length>visibleLimit&&<LoadMoreSentinel key={visibleLimit} onVisible={loadMore}/>}{filtered.length>visibleLimit&&<button className="load-more-button" onClick={loadMore}>さらに記事を読む<span>残り{filtered.length-visibleLimit}件</span><ChevronDown size={15}/></button>}
     <footer className="feed-footer"><span><Leaf size={13}/>今日は、どんな発見がありましたか。</span><button onClick={()=>{setState(s=>({...s,read:[...new Set([...s.read,...filtered.map(a=>a.id)])]}));notify('表示中の記事をすべて既読にしました');}}><CheckCheck size={14}/>すべて既読にする</button></footer>
     </>}
    </div>
