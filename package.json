@@ -1,0 +1,66 @@
+{
+  "name": "folio-rss-reader",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node scripts/cloudflare.mjs dev",
+    "build": "node scripts/cloudflare.mjs build",
+    "start": "node --import ./scripts/tool-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config .folio/deploy/wrangler.json --local --persist-to .folio/local-state --ip 127.0.0.1 --inspector-port 0",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "db:generate": "drizzle-kit generate",
+    "test": "node --test tests/*.test.ts",
+    "cloudflare:init": "node scripts/cloudflare.mjs init",
+    "cloudflare:login": "node scripts/cloudflare.mjs login",
+    "cloudflare:whoami": "node scripts/cloudflare.mjs whoami",
+    "cloudflare:build": "node scripts/cloudflare.mjs build",
+    "cloudflare:dev": "node scripts/cloudflare.mjs dev",
+    "cloudflare:dry-run": "node scripts/cloudflare.mjs dry-run",
+    "cloudflare:bootstrap": "node scripts/cloudflare.mjs bootstrap",
+    "cloudflare:deploy": "node scripts/cloudflare.mjs deploy",
+    "cloudflare:secret": "node scripts/cloudflare.mjs secret",
+    "cloudflare:secret-from-env": "node scripts/cloudflare.mjs secret-from-env",
+    "cloudflare:db:create": "node scripts/cloudflare.mjs db-create",
+    "cloudflare:db:migrate": "node scripts/cloudflare.mjs db-migrate"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
+    "@mozilla/readability": "^0.6.0",
+    "drizzle-orm": "0.45.2",
+    "fast-xml-parser": "^5.3.6",
+    "jose": "6.2.15",
+    "linkedom": "^0.18.12",
+    "lucide-react": "^1.31.0",
+    "next": "16.3.4",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.37.1",
+    "@cloudflare/workers-types": "4.20260515.1",
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/node": "^24.19.2",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "@vitejs/plugin-rsc": "0.5.26",
+    "drizzle-kit": "0.31.10",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.3.4",
+    "react-server-dom-webpack": "19.2.6",
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3",
+    "vinext": "1.0.0-beta.5",
+    "vite": "8.0.13",
+    "wrangler": "4.92.0"
+  },
+  "type": "module",
+  "overrides": {
+    "miniflare": {
+      "sharp": "0.35.4"
+    }
+  }
+}

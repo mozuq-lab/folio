@@ -1,0 +1,26 @@
+'use client';
+import { useRef, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
+import { ArrowRight, Check, Download, FileUp, LoaderCircle, Sparkles, X } from 'lucide-react';
+import { parseOpml, exportOpml } from '@/lib/opml';
+import type { Feed } from '@/lib/types';
+import type { AIRequest, AIResult, IntelligenceState } from '@/lib/intelligence-types';
+import type { ProviderStatus } from '@/lib/ai/types';
+import { AISettingsEditor } from './ai-settings';
+
+export function downloadFile(text:string,name:string,type='application/json'){
+ const url=URL.createObjectURL(new Blob([text],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+export function FeedTransfer({feeds,onImport}:{feeds:Feed[];onImport:(feeds:Feed[])=>void}){
+ const input=useRef<HTMLInputElement>(null);const [preview,setPreview]=useState<Feed[]>([]);const [filename,setFilename]=useState('');const [error,setError]=useState('');
+ const existing=new Set(feeds.map(f=>f.url.replace(/\/$/,'')));
+ const fresh=preview.filter(f=>!existing.has(f.url.replace(/\/$/,'')));
+ const readFile=async(file:File|undefined)=>{if(!file)return;setError('');setPreview([]);try{if(file.size>1024*1024)throw new Error('1MB以下のOPMLファイルを選んでください。');const result=parseOpml(await file.text());if(!result.length)throw new Error('読み込めるフィードがありませんでした。');setPreview(result);setFilename(file.name);}catch(e){setError(e instanceof Error?e.message:'OPMLを読み込めませんでした。');}};
+ return <section className="opml-section"><div className="modal-section-title"><h3>ほかのRSSリーダーからお引っ越し</h3><span>OPML</span></div><p>Feedlyなどから書き出した購読リストを、そのまま取り込めます。</p><div className="opml-actions"><button className="secondary-button" onClick={()=>input.current?.click()}><FileUp size={15}/>OPMLを選ぶ</button><button className="text-link" onClick={()=>downloadFile(exportOpml(feeds),'folio-subscriptions.opml','application/xml')}><Download size={14}/>購読リストを書き出す</button><input ref={input} type="file" accept=".opml,.xml,text/xml,application/xml" hidden aria-label="OPMLファイル" onChange={e=>void readFile(e.target.files?.[0])}/></div>{error&&<p className="form-error" role="alert">{error}</p>}{preview.length>0&&<div className="opml-preview"><strong>{filename}</strong><p>{preview.length}件を確認しました。新しく追加するフィードは{fresh.length}件です。</p><ul>{fresh.slice(0,8).map(f=><li key={f.id}><span>{f.name}</span><small>{f.category}</small></li>)}</ul>{fresh.length>8&&<p>ほか{fresh.length-8}件</p>}<div className="opml-preview-footer"><button className="text-link" onClick={()=>setPreview([])}>キャンセル</button><button className="primary-button" disabled={!fresh.length} onClick={()=>{onImport(fresh);setPreview([]);}}><Check size={15}/>{fresh.length}件を追加</button></div></div>}</section>;
+}
+export function NaturalPreferenceEditor({intelligence,setIntelligence,requestAI,aiAvailable,aiBusy,aiStatuses}:{intelligence:IntelligenceState;setIntelligence:Dispatch<SetStateAction<IntelligenceState>>;requestAI:(request:AIRequest)=>Promise<AIResult>;aiAvailable:boolean;aiBusy:boolean;aiStatuses:ProviderStatus[]}){
+ const [error,setError]=useState('');const [applied,setApplied]=useState(false);
+ const generate=async()=>{setError('');setApplied(false);try{const result=await requestAI({action:'preferences',articles:[],instruction:intelligence.instructions});if(result.kind!=='preferences')throw new Error('好みの設定を読み取れませんでした。');setIntelligence(s=>({...s,profile:result.profile,analysis:{}}));setApplied(true);}catch(e){setError(e instanceof Error?e.message:'AIで好みを整理できませんでした。');}};
+ const depth={any:'指定なし',introductory:'入門から',practical:'実践例を中心に',advanced:'専門的な内容を中心に'};
+ return <><AISettingsEditor statuses={aiStatuses} settings={intelligence.ai} onChange={ai=>setIntelligence(s=>({...s,ai}))}/><section className="natural-preferences"><div className="natural-title"><Sparkles size={16}/><h3>好みを、あなたの言葉で</h3><span className="ai-label">生成AI</span></div><p>読みたい内容や、控えたい話題を具体的に教えてください。</p><textarea aria-label="自然文の好み" maxLength={2000} rows={4} placeholder="AIの技術解説や実践例を優先。資金調達ニュースや初心者向けの入門記事は控えめに。" value={intelligence.instructions} onChange={e=>{setIntelligence(s=>({...s,instructions:e.target.value}));setApplied(false);}}/><div className="natural-actions"><small>{intelligence.instructions.length}/2000</small><button className="primary-button" disabled={!aiAvailable||aiBusy||!intelligence.instructions.trim()} onClick={()=>void generate()}>{aiBusy?<LoaderCircle size={14} className="spin"/>:<Sparkles size={14}/>}AIで好みを整理</button></div>{!aiAvailable&&<p className="connection-note">AI接続の準備中です。トピック選択とリアクションはそのまま使えます。</p>}{error&&<p className="form-error" role="alert">{error}</p>}{applied&&<p className="success-note"><Check size={13}/>おすすめに反映しました</p>}{intelligence.profile&&<div className="natural-profile"><strong>{intelligence.profile.summary}</strong><div>{intelligence.profile.boostTerms.map(t=><span className="positive-term" key={t}>＋ {t}</span>)}{intelligence.profile.muteTerms.map(t=><span className="negative-term" key={t}>− {t}</span>)}</div><small>{depth[intelligence.profile.preferredDepth]}</small><button className="text-link" onClick={()=>{setIntelligence(s=>({...s,profile:null,instructions:'',analysis:{}}));setApplied(false);}}><X size={12}/>自然文の条件を解除</button></div>}</section></>;
+}
