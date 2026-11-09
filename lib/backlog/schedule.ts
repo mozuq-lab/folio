@@ -13,10 +13,29 @@ const TOUCH_INTERVAL_MS = 3600000;
 
 const chunks = <T>(items: T[], size: number) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size));
 
+const uniqueFeeds = (feeds: Feed[]) => [...new Map(feeds.map(feed => [feed.id, feed] as const).reverse()).values()].reverse();
+
+// 保存済みの行と同じ内容（id・URL・名前・優先）なら書き込まない。同期文書の保存のたびに全行を書き直さないための比較。
+// 読み取りは1回だけで、渡された購読一覧以外は読まない。
+export async function syncFeedListIfChanged(db: Db, userId: string, feeds: Feed[]): Promise<boolean> {
+  const unique = uniqueFeeds(feeds);
+  const { results } = await db.prepare('SELECT feed_id, url, name, priority FROM folio_feeds WHERE user_id = ?').bind(userId).all<{ feed_id: string; url: string; name: string; priority: number }>();
+  const stored = new Map(results.map(row => [row.feed_id, row] as const));
+  let used = 0;
+  const same = stored.size === unique.length && unique.every(feed => {
+    const priority = feed.priority && used++ < MAX_PRIORITY_FEEDS ? 1 : 0;
+    const row = stored.get(feed.id);
+    return row !== undefined && row.url === feed.url && row.name === feed.name && row.priority === priority;
+  });
+  if (same) return false;
+  await syncFeedList(db, userId, feeds);
+  return true;
+}
+
 // 購読一覧をD1へ写す。優先は購読順の先頭 MAX_PRIORITY_FEEDS 件まで。
 // 読み取り1回と、書き込みのbatchを文の数に応じて数回だけ使う（500件でもbatchは1〜2回）。
 export async function syncFeedList(db: Db, userId: string, feeds: Feed[]): Promise<void> {
-  const unique = [...new Map(feeds.map(feed => [feed.id, feed] as const).reverse()).values()].reverse();
+  const unique = uniqueFeeds(feeds);
   const keep = new Set(unique.map(feed => feed.id));
   const { results } = await db.prepare('SELECT feed_id FROM folio_feeds WHERE user_id = ?').bind(userId).all<{ feed_id: string }>();
   const removed = results.map(row => row.feed_id).filter(id => !keep.has(id));
@@ -104,4 +123,14 @@ export async function listFeedStates(db: Db, userId: string): Promise<{ feedId: 
      WHERE f.user_id = ? ORDER BY f.feed_id`,
   ).bind(userId).all<{ feed_id: string; last_fetched_at: string | null; last_error: string | null }>();
   return results.map(row => ({ feedId: row.feed_id, lastFetchedAt: row.last_fetched_at, lastError: row.last_error }));
+}
+
+// 即時取得用に、その利用者の購読として登録されているフィード1件だけを引く。
+export async function getFeedTarget(db: Db, userId: string, feedId: string): Promise<FeedTarget | null> {
+  const row = await db.prepare(
+    `SELECT f.user_id, f.feed_id, f.url, f.priority, s.etag, s.last_modified, s.last_fetched_at
+     FROM folio_feeds f LEFT JOIN folio_feed_state s ON s.user_id = f.user_id AND s.feed_id = f.feed_id
+     WHERE f.user_id = ? AND f.feed_id = ?`,
+  ).bind(userId, feedId).first<TargetRow>();
+  return row ? toTarget(row) : null;
 }
