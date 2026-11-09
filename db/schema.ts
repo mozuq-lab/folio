@@ -31,6 +31,11 @@ export const folioArticles = sqliteTable('folio_articles', {
   index('folio_articles_fetched_at_idx').on(table.fetchedAt),
 ]);
 
+export const folioSeq = sqliteTable('folio_seq', {
+  userId: text('user_id').primaryKey().notNull(),
+  value: integer('value').notNull(),
+});
+
 export const folioFeeds = sqliteTable('folio_feeds', {
   userId: text('user_id').notNull(),
   feedId: text('feed_id').notNull(),

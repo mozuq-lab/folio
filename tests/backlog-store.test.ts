@@ -154,3 +154,30 @@ test('期限切れ削除はlimitを守る', async () => {
   assert.equal(await purgeExpired(db, NOW), 6);
   assert.equal(await purgeExpired(db, NOW), 0);
 });
+
+test('期限切れ削除のあとでも番号が戻らず、古いカーソルで新しい行を取れる', async () => {
+  const db = createTestD1();
+  await insertArticles(db, 'u1', 'f1', [article('a')], ago(100));
+  await setRead(db, 'u1', ['a'], true, ago(100));
+  const { next } = await listChanges(db, 'u1', null);
+  assert.equal(await purgeExpired(db, NOW), 1);
+  await insertArticles(db, 'u1', 'f1', [article('b')], NOW);
+  const page = await listChanges(db, 'u1', next);
+  assert.deepEqual(page.entries.map(e => e.article.id), ['b']);
+});
+
+test('他の利用者の書き込みは番号を進めない', async () => {
+  const db = createTestD1();
+  await insertArticles(db, 'u1', 'f1', [article('a')], NOW);
+  const before = db.sqlite.prepare("SELECT value FROM folio_seq WHERE user_id = 'u1'").get();
+  await insertArticles(db, 'u2', 'f1', many(3), NOW);
+  await setRead(db, 'u2', ['a00000'], true, NOW);
+  assert.deepEqual(db.sqlite.prepare("SELECT value FROM folio_seq WHERE user_id = 'u1'").get(), before);
+});
+
+test('取り込みは記事も既読も1000件までで、超えるとエラーになる', async () => {
+  const db = createTestD1();
+  await assert.rejects(importArticles(db, 'u1', many(1001), [], NOW), BacklogInputError);
+  await assert.rejects(importArticles(db, 'u1', [], many(1001).map(a => a.id), NOW), BacklogInputError);
+  assert.deepEqual(await importArticles(db, 'u1', many(1000), [], NOW), { inserted: 1000, markedRead: 0 });
+});

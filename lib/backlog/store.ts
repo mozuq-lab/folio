@@ -7,16 +7,23 @@ export type BacklogEntry = { article: StoredArticle; feedId: string; fetchedAt: 
 export class BacklogInputError extends Error {}
 
 // D1は1文あたりのバインド数が100まで。1回のbatchに入れる文の数も抑える。
-const IDS_PER_STATEMENT = 80;
+const IDS_PER_STATEMENT = 90;
+const ROWS_PER_STATEMENT = 18;
 const STATEMENTS_PER_BATCH = 50;
-const NEXT_SEQ = '(SELECT COALESCE(MAX(updated_seq), 0) + 1 FROM folio_articles WHERE user_id = ?)';
+const MAX_IMPORT = 1000;
+const SEQ = '(SELECT value FROM folio_seq WHERE user_id = ?1)';
 
 const chunks = <T>(items: T[], size: number) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size));
-const changed = (results: D1Result[]) => results.reduce((sum, result) => sum + (result.meta?.changes ?? 0), 0);
 
-async function runInBatches(db: Db, statements: D1PreparedStatement[]) {
+// 各batchの先頭で利用者の番号を1つ進め、そのbatchの書き込みは同じ番号を使う。
+// 番号は行とは別に持つので、期限切れで行が消えても戻らない。
+async function runInBatches(db: Db, userId: string, statements: D1PreparedStatement[]) {
+  const bump = () => db.prepare('INSERT INTO folio_seq (user_id, value) VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET value = value + 1').bind(userId);
   let total = 0;
-  for (const group of chunks(statements, STATEMENTS_PER_BATCH)) total += changed(await db.batch(group));
+  for (const group of chunks(statements, STATEMENTS_PER_BATCH)) {
+    const results = await db.batch([bump(), ...group]);
+    total += results.slice(1).reduce((sum, result) => sum + (result.meta?.changes ?? 0), 0);
+  }
   return total;
 }
 
@@ -27,25 +34,31 @@ function withoutContent(article: Article): StoredArticle {
   return stored;
 }
 
-function insertStatements(db: Db, userId: string, feedId: string, articles: Article[], now: Date) {
+function insertStatements(db: Db, userId: string, feedOf: (article: Article) => string, articles: Article[], now: Date) {
   const fetchedAt = now.toISOString();
-  // 1文ごとにseqを数え直すので、同じbatch内でも記事ごとに増えていく。
-  return articles.map(article => withoutContent(article)).map(stored => db.prepare(
-    `INSERT OR IGNORE INTO folio_articles (user_id, article_id, feed_id, url, published_at, fetched_at, read_at, updated_seq, payload)
-     VALUES (?, ?, ?, ?, ?, ?, NULL, ${NEXT_SEQ}, ?)`,
-  ).bind(userId, stored.id, feedId, stored.url, stored.publishedAt, fetchedAt, userId, JSON.stringify(stored)));
+  return chunks(articles, ROWS_PER_STATEMENT).map(group => {
+    const values: string[] = [];
+    const binds: string[] = [userId, fetchedAt];
+    for (const article of group) {
+      const stored = withoutContent(article);
+      const n = binds.length;
+      values.push(`(?1, ?${n + 1}, ?${n + 2}, ?${n + 3}, ?${n + 4}, ?2, NULL, ${SEQ}, ?${n + 5})`);
+      binds.push(stored.id, feedOf(article), stored.url, stored.publishedAt, JSON.stringify(stored));
+    }
+    return db.prepare(`INSERT OR IGNORE INTO folio_articles (user_id, article_id, feed_id, url, published_at, fetched_at, read_at, updated_seq, payload) VALUES ${values.join(', ')}`).bind(...binds);
+  });
 }
 
 function readStatements(db: Db, userId: string, articleIds: string[], read: boolean, now: Date) {
   const readAt = read ? now.toISOString() : null;
   return chunks([...new Set(articleIds)], IDS_PER_STATEMENT).map(ids => db.prepare(
-    `UPDATE folio_articles SET read_at = ?, updated_seq = ${NEXT_SEQ}
-     WHERE user_id = ? AND article_id IN (${ids.map(() => '?').join(',')}) AND read_at IS ${read ? '' : 'NOT '}NULL`,
-  ).bind(readAt, userId, userId, ...ids));
+    `UPDATE folio_articles SET read_at = ?2, updated_seq = ${SEQ}
+     WHERE user_id = ?1 AND article_id IN (${ids.map((_, i) => `?${i + 3}`).join(',')}) AND read_at IS ${read ? '' : 'NOT '}NULL`,
+  ).bind(userId, readAt, ...ids));
 }
 
 export async function insertArticles(db: Db, userId: string, feedId: string, articles: Article[], now: Date) {
-  return runInBatches(db, insertStatements(db, userId, feedId, articles, now));
+  return runInBatches(db, userId, insertStatements(db, userId, () => feedId, articles, now));
 }
 
 const encodeCursor = (seq: number, articleId: string) => `${seq}:${encodeURIComponent(articleId)}`;
@@ -77,12 +90,13 @@ export async function listChanges(db: Db, userId: string, cursor: string | null,
 
 export async function setRead(db: Db, userId: string, articleIds: string[], read: boolean, now: Date) {
   if (articleIds.length > MAX_READ_BATCH) throw new BacklogInputError(`一度に更新できるのは${MAX_READ_BATCH}件までです。`);
-  return runInBatches(db, readStatements(db, userId, articleIds, read, now));
+  return runInBatches(db, userId, readStatements(db, userId, articleIds, read, now));
 }
 
 export async function importArticles(db: Db, userId: string, articles: Article[], readIds: string[], now: Date) {
-  const inserted = await runInBatches(db, articles.flatMap(article => insertStatements(db, userId, article.sourceId, [article], now)));
-  const markedRead = await runInBatches(db, readStatements(db, userId, readIds, true, now));
+  if (articles.length > MAX_IMPORT || readIds.length > MAX_IMPORT) throw new BacklogInputError(`一度に取り込めるのは記事・既読ともに${MAX_IMPORT}件までです。`);
+  const inserted = await runInBatches(db, userId, insertStatements(db, userId, article => article.sourceId, articles, now));
+  const markedRead = await runInBatches(db, userId, readStatements(db, userId, readIds, true, now));
   return { inserted, markedRead };
 }
 
