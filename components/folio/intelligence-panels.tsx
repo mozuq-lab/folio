@@ -4,7 +4,7 @@ import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { ArrowUpRight, Bookmark, BookOpen, Check, Clock3, Compass, FileText, Layers3, LoaderCircle, MessageSquare, Search, Sparkles, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react';
 import type { Article, ReaderState } from '../../lib/types';
 import type { AIRequest, AIResult, ArticleNote, DigestResult, IntelligenceState, StoryReport } from '../../lib/intelligence-types';
-import { buildReadingPlan, clusterStories, searchLibrary, selectExploration } from '../../lib/discovery';
+import { buildReadingPlan, clusterStories, recentArticles, searchLibrary, selectExploration } from '../../lib/discovery';
 import './intelligence-panels.css';
 
 export interface FeaturePanelProps {
@@ -90,7 +90,8 @@ export function StoriesView(props: FeaturePanelProps) {
   const [includeSingles, setIncludeSingles] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const clusters = useMemo(() => clusterStories(reader.articles, reader.read), [reader.articles, reader.read]);
+  // バックログを含めると数万件になるので、ニュースのまとまりは直近7日の記事だけで作る。
+  const clusters = useMemo(() => clusterStories(recentArticles(reader.articles, new Date()), reader.read), [reader.articles, reader.read]);
   const readIds = useMemo(() => new Set(reader.read), [reader.read]);
   const shown = clusters.filter(cluster => includeSingles || cluster.articles.length > 1);
   async function compare(id: string, articles: Article[]) {
