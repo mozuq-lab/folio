@@ -91,7 +91,9 @@ export function StoriesView(props: FeaturePanelProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState('');
   // バックログを含めると数万件になるので、ニュースのまとまりは直近7日の記事だけで作る。
-  const clusters = useMemo(() => clusterStories(recentArticles(reader.articles, new Date()), reader.read), [reader.articles, reader.read]);
+  // 記事の配列を既読の変化と別に保つと、既読にしたときも同じニュースの索引を作り直さずに済む。
+  const recent = useMemo(() => recentArticles(reader.articles, new Date()), [reader.articles]);
+  const clusters = useMemo(() => clusterStories(recent, reader.read), [recent, reader.read]);
   const readIds = useMemo(() => new Set(reader.read), [reader.read]);
   const shown = clusters.filter(cluster => includeSingles || cluster.articles.length > 1);
   async function compare(id: string, articles: Article[]) {

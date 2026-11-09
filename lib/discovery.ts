@@ -53,7 +53,7 @@ interface ImportanceIndex {
   prefixes: Int32Array[];
   /** prefix tokenの番号から記事の位置を引く。 */
   byPrefix: (Posting | undefined)[];
-  /** candidatePositionsの作業領域。呼び出しごとにprobeを進め、印の付け直しを省く。 */
+  /** candidatePositionsの作業領域。呼び出しごとにprobeを進め、印の付け直しを省く。共有するのでcandidatePositionsは入れ子で呼ばない。 */
   tokenMarks: Int32Array;
   articleMarks: Int32Array;
   probe: number;
@@ -303,6 +303,7 @@ function storyMatches(index: ImportanceIndex): number[][] {
   articles.forEach((article, position) => {
     for (const other of candidatePositions(index, parsedArticle(article), index.prefixes[position], position, true)) {
       if (!sameStory(article, articles[other])) continue;
+      // URLの一致とprefixで同じ組を両側から1回ずつ引くことがあるが、使う側（sourceCount・clusterStories）はSetで重複を除く。
       matches[position].push(other);
       matches[other].push(position);
     }
