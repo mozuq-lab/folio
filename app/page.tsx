@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { AlertCircle, BookOpen, Circle, Cloud, CloudOff, Layers3, NotebookPen, Telescope, ArrowDownWideNarrow, ArrowRight, ArrowUpRight, Bookmark, BookmarkCheck, Check, CheckCheck, ChevronDown, ChevronRight, Download, ExternalLink, Folder, Heart, Inbox, LayoutGrid, Leaf, List, LoaderCircle, Menu, Plus, RefreshCw, Rows3, Rss, Search, Settings, Settings2, SlidersHorizontal, Sparkles, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react';
 import { DEFAULT_PREFERENCES, INITIAL_FEEDS, SAMPLE_ARTICLES, TOPICS } from '@/lib/data';
 import { applyFeedback } from '@/lib/recommendations';
-import { retainedArticleIds } from '@/lib/retention';
+import { clearStoryReports, retainedArticleIds } from '@/lib/retention';
 import { useLibrary } from '@/hooks/use-library';
 import { useBacklog } from '@/hooks/use-backlog';
 import { freezeOrder, mergeReadIds, mergeViewArticles, routeReadChange } from '@/lib/backlog/view';
@@ -281,6 +281,8 @@ export default function Home(){
  },[ownerId,migrationNeeded,migrateBacklog,syncBacklog,syncNow,refreshFeeds,setState,withRefreshing]);
  // 保存・メモ・AIの結果が参照した記事の本体を同期データへ写す（90日を過ぎても参照先が消えないように）。
  useEffect(()=>{const missing=retainedArticleIds(state,intelligence).filter(id=>!libraryIds.has(id)).map(id=>viewById.get(id)).filter((a):a is Article=>!!a);if(missing.length)setState(s=>missing.reduce((r,a)=>retainArticle(r,toArticle(a)),s));},[state,intelligence,libraryIds,viewById,setState]);
+ // 「ニュースのまとまり」をなくしたので、保存済みの比較結果を同期データから消す（参照していた記事は次の整理で外れる）。
+ useEffect(()=>{if(ready&&Object.keys(intelligence.storyReports).length)setIntelligence(clearStoryReports);},[ready,intelligence.storyReports,setIntelligence]);
  const feedbackCount=Object.keys(state.feedback).length;
  return <div className="app-shell">
   {mobileMenu&&<div className="sidebar-scrim" onClick={()=>setMobileMenu(false)}/>}
