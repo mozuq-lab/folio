@@ -67,7 +67,7 @@ export async function runBacklogMigration(deps: MigrationDeps): Promise<Migratio
   if (!start || start.ownerId !== deps.ownerId) return 'owner-changed';
   if (!needsBacklogMigration(start.reader)) return 'skipped';
   const snapshot = start.reader;
-  const payload = migrationPayload(snapshot, start.intelligence);
+  const payload = migrationPayload(snapshot);
   const imported = new Set(payload.articles.map(a => a.id));
   const sameOwner = () => deps.library()?.ownerId === deps.ownerId;
   for (const body of importRequests(payload)) {
