@@ -27,7 +27,7 @@ export async function fetchTarget(db: Db, target: FeedTarget, now: Date, fetcher
   } catch (error) {
     const kind = feedErrorKind(error);
     try { await recordFeedResult(db, target.userId, target.feedId, now, { ok: false, error: kind }); } catch { /* 呼び出し側は続ける */ }
-    return { inserted: 0, error: kind };
+    return { inserted, error: kind };
   }
 }
 
@@ -37,8 +37,9 @@ export async function runScheduledFetch(deps: { db: Db; now: Date; allowedEmails
   const summary: ScheduledSummary = { fetched: 0, inserted: 0, failed: 0, purged: 0 };
   for (const target of await pickFeedsToFetch(db, now, allowedEmails)) {
     const outcome = await fetchTarget(db, target, now, fetcher);
+    summary.inserted += outcome.inserted;
     if (outcome.error) summary.failed++;
-    else { summary.fetched++; summary.inserted += outcome.inserted; }
+    else summary.fetched++;
   }
   if (isPurgeWindow(now)) summary.purged = await purgeExpired(db, now);
   return summary;
