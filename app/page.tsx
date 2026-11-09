@@ -23,9 +23,10 @@ import { LoadMoreSentinel } from '@/components/folio/load-more-sentinel';
 import { rankPersonalized, mixExploration, toArticle } from '@/lib/personalization';
 import type { IntelligentArticle } from '@/lib/personalization';
 import { selectExploration, applyNaturalProfile } from '@/lib/discovery';
-import type { AIRequest, AIResult, SyncDocument } from '@/lib/intelligence-types';
+import type { AIRequest, AIResult, ArticleAnalysis, SyncDocument } from '@/lib/intelligence-types';
+import { analyzeBatches, mergeAnalysis } from '@/lib/ai-analyze';
 import { clientTimeoutMs, effectiveSelection } from '@/lib/ai-settings';
-import type { ProviderStatus } from '@/lib/ai/types';
+import { ANALYZE_BATCH_SIZE, MAX_REQUEST_ARTICLES, type ProviderStatus } from '@/lib/ai/types';
 import { DigestView, NotebookView, ExploreView } from '@/components/folio/intelligence-panels';
 import { FeedTransfer, NaturalPreferenceEditor, downloadFile } from '@/components/folio/library-dialogs';
 import { ArticleReader } from '@/components/folio/article-reader';
@@ -104,6 +105,7 @@ export default function Home(){
  const [aiStatuses,setAIStatuses]=useState<ProviderStatus[]>([]);
  const [aiBusy,setAIBusy]=useState(false);
  const [aiError,setAIError]=useState('');
+ const [aiProgress,setAIProgress]=useState<{done:number;total:number}|null>(null);
  const aiBusyRef=useRef(false);
  const [selected,setSelected]=useState<Article|null>(null);
  const [mobileMenu,setMobileMenu]=useState(false);
@@ -161,13 +163,29 @@ export default function Home(){
  const aiSelection=useMemo(()=>effectiveSelection(intelligence.ai,aiStatuses),[intelligence.ai,aiStatuses]);const aiAvailable=!!aiSelection?.available;
  const checkAI=useCallback(()=>loadAIStatuses().then(setAIStatuses),[]);
  useEffect(()=>{if(!ready)return;let active=true;void loadAIStatuses().then(statuses=>{if(active)setAIStatuses(statuses);});return()=>{active=false;};},[ready]);
+ // AIへ1回送る。実行中かどうかの管理は呼び出し側で行う。
+ const sendAI=useCallback(async(request:AIRequest):Promise<AIResult>=>{
+  if(!aiSelection)throw new Error('AIは未接続です。設定画面で提供元を選び、APIキーを登録してください。');const payload={...request,provider:aiSelection.provider,model:aiSelection.model,effort:aiSelection.effort,articles:request.articles.slice(0,request.action==='analyze'?ANALYZE_BATCH_SIZE:MAX_REQUEST_ARTICLES).map(a=>({...toArticle(a),content:a.content?.slice(0,18000)}))};const response=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(clientTimeoutMs(aiSelection.effort))});const result=await response.json() as AIResult&{error?:string};if(!response.ok){if(response.status===503)void checkAI();throw new Error(result.error||'AI処理を完了できませんでした。');}return result;
+ },[aiSelection,checkAI]);
  const requestAI=useCallback(async(request:AIRequest):Promise<AIResult>=>{
   if(aiBusyRef.current)throw new Error('別のAI処理が実行中です。完了をお待ちください。');
   aiBusyRef.current=true;setAIBusy(true);setAIError('');
-  try{if(!aiSelection)throw new Error('AIは未接続です。設定画面で提供元を選び、APIキーを登録してください。');const payload={...request,provider:aiSelection.provider,model:aiSelection.model,effort:aiSelection.effort,articles:request.articles.slice(0,30).map(a=>({...toArticle(a),content:a.content?.slice(0,18000)}))};const response=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(clientTimeoutMs(aiSelection.effort))});const result=await response.json() as AIResult&{error?:string};if(!response.ok){if(response.status===503)void checkAI();throw new Error(result.error||'AI処理を完了できませんでした。');}return result;
+  try{return await sendAI(request);
   }catch(error){const message=error instanceof Error?error.message:'AI処理を完了できませんでした。';setAIError(message);throw new Error(message);}finally{aiBusyRef.current=false;setAIBusy(false);}
- },[aiSelection,checkAI]);
- const analyze=async()=>{try{const result=await requestAI({action:'analyze',articles:ranked.filter(a=>!readSet.has(a.id)).slice(0,30),instruction:`興味のあるトピック: ${state.preferences.interests.join('、')}。${intelligence.instructions}`});if(result.kind==='analyze'){setIntelligence(s=>({...s,analysis:{...s.analysis,...Object.fromEntries(result.analysis.map(a=>[a.articleId,a]))}}));notify(`${result.analysis.length}記事をAIで評価しました`);rerank();}}catch{/* the toolbar displays the request error */}};
+ },[sendAI]);
+ // AIで選び直す：未読の上位300件を見出しだけにして50件ずつ、2つ並行で送る。評価できた分だけを保存する。
+ const analyze=async()=>{
+  if(aiBusyRef.current)return;
+  const batches=analyzeBatches(ranked.filter(a=>!readSet.has(a.id)));if(!batches.length)return;
+  const total=batches.reduce((n,b)=>n+b.length,0);const instruction=`興味のあるトピック: ${state.preferences.interests.join('、')}。${intelligence.instructions}`;
+  aiBusyRef.current=true;setAIBusy(true);setAIError('');setAIProgress({done:0,total});
+  const results:ArticleAnalysis[]=[];let failed=0,firstError='',next=0,done=0;
+  const worker=async()=>{while(next<batches.length){const batch=batches[next++];try{const result=await sendAI({action:'analyze',articles:batch,instruction});if(result.kind==='analyze')results.push(...result.analysis);}catch(error){failed+=batch.length;firstError||=error instanceof Error?error.message:'AI処理を完了できませんでした。';}done+=batch.length;setAIProgress({done,total});}};
+  try{await Promise.all([worker(),worker()]);
+   if(results.length){const keep=new Set(viewArticles.map(a=>a.id));setIntelligence(s=>({...s,analysis:mergeAnalysis(s.analysis,results,keep)}));notify(failed?`${results.length}記事をAIで評価しました（${failed}件は評価できませんでした）`:`${results.length}記事をAIで評価しました`);rerank();}
+   else if(firstError)setAIError(firstError);
+  }finally{aiBusyRef.current=false;setAIBusy(false);setAIProgress(null);}
+ };
 
  const filtered=useMemo(()=>{
   const categoryFeeds=new Set(state.feeds.filter(f=>f.category===category).map(f=>f.id));
@@ -288,7 +306,7 @@ export default function Home(){
     {!ready&&<div className="library-status-banner"><LoaderCircle size={14} className="spin"/>ライブラリを読み込んでいます…</div>}{ready&&(syncStatus==='error'||storageWarning)&&<div className="library-status-banner warning"><AlertCircle size={14}/><span>{storageWarning?'端末への保存に失敗しました。バックアップを書き出してください。':syncError}</span><button onClick={exportData}>バックアップ</button><button onClick={()=>void syncNow()}>再同期</button></div>}{ready&&(migrationError||backlogError)&&<div className="library-status-banner warning"><AlertCircle size={14}/><span>{migrationError||backlogError}</span><button onClick={()=>void (migrationError?migrateBacklog():syncBacklog())}>再試行</button></div>}{refreshNotice&&<div className="library-status-banner warning" role="status"><AlertCircle size={14}/><span>{refreshNotice}</span><button onClick={()=>setModal('feeds')}>フィードの管理</button><button onClick={()=>setRefreshNotice('')}>閉じる</button></div>}
     {isFeature?<>{view==='digest'&&<DigestView {...featureProps} reader={{...reader,articles:digestArticles}}/ >}{view==='notebook'&&<NotebookView {...featureProps}/ >}{view==='explore'&&<ExploreView {...featureProps}/ >}</>:<>
     {view==='for-you'&&!query&&<section className="welcome-banner"><div className="banner-copy"><div className="eyebrow"><span className="status-dot"/>A LITTLE MORE YOU</div><h2>好奇心が、次の発見を連れてくる。</h2><p>あなたの「好き」から、読むべきストーリーを。</p></div><button className="banner-action" onClick={()=>setModal('preferences')}>興味のあることを教える<ArrowRight size={15}/></button></section>}
-    {view==='for-you'&&<div className="intelligence-toolbar"><div className="ranking-lenses" role="group" aria-label="おすすめの評価軸"><button className={lens==='interest'?'active':''} onClick={()=>setLens('interest')}><Heart size={14}/>関心度</button><button className={lens==='importance'?'active':''} onClick={()=>setLens('importance')}><Layers3 size={14}/>重要度</button></div><button className="ai-evaluate-button" disabled={!aiAvailable||aiBusy||!baseRanked.length} onClick={()=>void analyze()}>{aiBusy?<LoaderCircle size={14} className="spin"/>:<Sparkles size={14}/ >}{aiBusy?'AIが評価中…':'AIで選び直す'}</button></div>}{view==='for-you'&&<div className="ranking-explainer"><span>{lens==='interest'?'あなたの興味と自然文の好みを反映。探索枠は新しい視点を届けます。':'影響・緊急性を評価。AI未評価の記事は掲載状況と言葉からの推定です。'}</span><button onClick={()=>void checkAI()}>{aiAvailable?'AI利用設定済み':'AI接続の準備中'}</button></div>}{aiError&&view==='for-you'&&<p className="inline-ai-error" role="alert">{aiError}</p>}
+    {view==='for-you'&&<div className="intelligence-toolbar"><div className="ranking-lenses" role="group" aria-label="おすすめの評価軸"><button className={lens==='interest'?'active':''} onClick={()=>setLens('interest')}><Heart size={14}/>関心度</button><button className={lens==='importance'?'active':''} onClick={()=>setLens('importance')}><Layers3 size={14}/>重要度</button></div><button className="ai-evaluate-button" disabled={!aiAvailable||aiBusy||!baseRanked.length} onClick={()=>void analyze()}>{aiBusy?<LoaderCircle size={14} className="spin"/>:<Sparkles size={14}/ >}{aiBusy?(aiProgress?`AIが評価中… ${aiProgress.done}/${aiProgress.total}`:'AIが評価中…'):'AIで選び直す'}</button></div>}{view==='for-you'&&<div className="ranking-explainer"><span>{lens==='interest'?'あなたの興味と自然文の好みを反映。探索枠は新しい視点を届けます。':'影響・緊急性を評価。AI未評価の記事は掲載状況と言葉からの推定です。'}</span><button onClick={()=>void checkAI()}>{aiAvailable?'AI利用設定済み':'AI接続の準備中'}</button></div>}{aiError&&view==='for-you'&&<p className="inline-ai-error" role="alert">{aiError}</p>}
     <div className="category-tabs" aria-label="記事のカテゴリ">{CATEGORIES.map(c=><button key={c} className={category===c?'active':''} onClick={()=>setCategory(c)}>{c}</button>)}</div>
     <div className="section-heading"><div className="section-title">{view==='for-you'?<Sparkles size={19}/>:view==='saved'?<Bookmark size={19}/>:<Rss size={19}/>}<h2>{query?`「${query}」の検索結果`:view==='for-you'?'あなたへのおすすめ':view==='saved'?'保存した記事':'記事一覧'}</h2><span className="article-count">{filtered.length}</span>{isSample&&<span className="sample-label">サンプル</span>}</div><div className="view-controls"><label className="sort-control"><ArrowDownWideNarrow size={14}/><select aria-label="記事の並び順" value={sort} onChange={e=>setSort(e.target.value)}><option value="recommended">おすすめ順</option><option value="latest">新しい順</option></select><ChevronDown size={11}/></label><div className="layout-toggle" role="group" aria-label="記事の表示形式"><button className={layout==='grid'?'active':''} aria-label="カード表示" title="カード表示" aria-pressed={layout==='grid'} onClick={()=>setLayout('grid')}><LayoutGrid size={15}/></button><button className={layout==='list'?'active':''} aria-label="リスト表示" title="リスト表示" aria-pressed={layout==='list'} onClick={()=>setLayout('list')}><List size={16}/></button><button className={layout==='compact'?'active':''} aria-label="コンパクト表示" title="コンパクト表示：見出しを1行で表示" aria-pressed={layout==='compact'} onClick={()=>setLayout('compact')}><Rows3 size={16}/></button></div></div></div>
     <div className="results-meta"><span>{isSample?'まずはサンプル記事で体験。更新すると実際のRSSを取得できます。':state.lastUpdated?`最終更新 ${relativeTime(state.lastUpdated)} · あなたの関心に合わせてセレクト`:'あなたの関心に合わせてセレクト'}</span><div className="results-actions"><MarkAllRead disabled={!ownerId} unreadIds={unreadShown} send={markReadBatch} onDone={count=>notify(`${count}件を既読にしました`)}/><label className="unread-toggle"><input type="checkbox" checked={unreadOnly} onChange={e=>setUnreadOnly(e.target.checked)}/><span>未読のみ</span></label></div></div>
