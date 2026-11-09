@@ -18,7 +18,7 @@ test('表示のURL：フィードは別タブで開けるURLにし、URLから�
   assert.equal(viewHref('for-you'), '/');
   assert.equal(viewHref('feed:opml-1a2b'), '/?view=feed%3Aopml-1a2b');
   assert.equal(viewHref('all'), '/?view=all');
-  for (const view of ['for-you', 'digest', 'stories', 'notebook', 'explore', 'all', 'saved', 'feed:opml-1a2b']) assert.equal(parseViewParam(new URL(`https://folio.example${viewHref(view)}`).searchParams.get('view') ?? 'for-you'), view);
+  for (const view of ['for-you', 'digest', 'notebook', 'explore', 'all', 'saved', 'feed:opml-1a2b']) assert.equal(parseViewParam(new URL(`https://folio.example${viewHref(view)}`).searchParams.get('view') ?? 'for-you'), view);
   for (const raw of [null, '', 'unknown', 'feed:', 'feed:' + 'x'.repeat(300)]) assert.equal(parseViewParam(raw), null);
 });
 

@@ -26,7 +26,7 @@ import { selectExploration, applyNaturalProfile } from '@/lib/discovery';
 import type { AIRequest, AIResult, SyncDocument } from '@/lib/intelligence-types';
 import { clientTimeoutMs, effectiveSelection } from '@/lib/ai-settings';
 import type { ProviderStatus } from '@/lib/ai/types';
-import { DigestView, StoriesView, NotebookView, ExploreView } from '@/components/folio/intelligence-panels';
+import { DigestView, NotebookView, ExploreView } from '@/components/folio/intelligence-panels';
 import { FeedTransfer, NaturalPreferenceEditor, downloadFile } from '@/components/folio/library-dialogs';
 import { ArticleReader } from '@/components/folio/article-reader';
 import { LibraryBackupTransfer } from '@/components/folio/library-backup-transfer';
@@ -183,7 +183,7 @@ export default function Home(){
  const digestArticles=useMemo(()=>view==='digest'?baseRanked.map(toArticle):[],[view,baseRanked]);
  const isSample=viewArticles.length>0&&viewArticles.every(a=>a.isSample);
  const activeFeed=view.startsWith('feed:')?state.feeds.find(f=>f.id===view.slice(5)):null;
- const featureTitles:Record<string,[string,string]>={digest:['今日のダイジェスト','限られた時間で、大切なストーリーに出会う。'],stories:['ニュースのまとまり','同じニュースを一度に。続報は、新しい視点から。'],notebook:['ナレッジノート','読んだことを、あなたの知識に。'],explore:['新しい発見','いつもの好奇心の、少し先へ。']};
+ const featureTitles:Record<string,[string,string]>={digest:['今日のダイジェスト','限られた時間で、大切なストーリーに出会う。'],notebook:['ナレッジノート','読んだことを、あなたの知識に。'],explore:['新しい発見','いつもの好奇心の、少し先へ。']};
  const isFeature=!!featureTitles[view];
  const title=featureTitles[view]?.[0]||(view==='saved'?'あとで読む':view==='all'?'すべての記事':activeFeed?activeFeed.name:'今日のあなたへ');
  const subtitle=featureTitles[view]?.[1]||(view==='saved'?'気になった記事を、あなたのペースで。':view==='all'?'フォローしているメディアの、新しいストーリー。':activeFeed?'このフィードの最新記事をチェック。':'たくさんの情報から、あなたにとって大切なものを。');
@@ -272,7 +272,6 @@ export default function Home(){
    <nav className="main-nav" aria-label="メインメニュー">
     <button className={view==='for-you'?'nav-item selected':'nav-item'} onClick={()=>changeView('for-you')}><Sparkles size={18}/><span>For You</span><span className="nav-new">{aiAvailable?'AI':'YOU'}</span></button>
     <button className={view==='digest'?'nav-item selected':'nav-item'} onClick={()=>changeView('digest')}><BookOpen size={18}/><span>今日のダイジェスト</span></button>
-    <button className={view==='stories'?'nav-item selected':'nav-item'} onClick={()=>changeView('stories')}><Layers3 size={18}/><span>ニュースのまとまり</span></button>
     <button className={view==='notebook'?'nav-item selected':'nav-item'} onClick={()=>changeView('notebook')}><NotebookPen size={18}/><span>ナレッジノート</span>{intelligence.notes.length>0&&<span className="nav-count">{intelligence.notes.length}</span>}</button>
     <button className={view==='explore'?'nav-item selected':'nav-item'} onClick={()=>changeView('explore')}><Telescope size={18}/><span>新しい発見</span></button>
     <button className={view==='all'?'nav-item selected':'nav-item'} onClick={()=>changeView('all')}><Inbox size={18}/><span>すべての記事</span><span className="nav-count">{unread}</span></button>
@@ -287,7 +286,7 @@ export default function Home(){
    <main className="main-layout"><div className="main-column">
     <div className="page-heading"><div><div className="date-label">{new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',month:'long',day:'numeric',weekday:'long'}).format(new Date())}<span className="date-line"/></div><h1>{title}<span className="heading-dot">.</span></h1><p>{subtitle}</p></div><button className={`refresh-button ${refreshing?'is-refreshing':''}`} onClick={refresh} disabled={refreshing||!ownerId}><RefreshCw size={15} className={refreshing?'spin':''}/><span>{refreshing?(refreshProgress&&refreshProgress.total>1?`更新中… ${refreshProgress.done}/${refreshProgress.total}`:'更新中…'):activeFeed?'このフィードを更新':'フィードを更新'}</span></button></div>
     {!ready&&<div className="library-status-banner"><LoaderCircle size={14} className="spin"/>ライブラリを読み込んでいます…</div>}{ready&&(syncStatus==='error'||storageWarning)&&<div className="library-status-banner warning"><AlertCircle size={14}/><span>{storageWarning?'端末への保存に失敗しました。バックアップを書き出してください。':syncError}</span><button onClick={exportData}>バックアップ</button><button onClick={()=>void syncNow()}>再同期</button></div>}{ready&&(migrationError||backlogError)&&<div className="library-status-banner warning"><AlertCircle size={14}/><span>{migrationError||backlogError}</span><button onClick={()=>void (migrationError?migrateBacklog():syncBacklog())}>再試行</button></div>}{refreshNotice&&<div className="library-status-banner warning" role="status"><AlertCircle size={14}/><span>{refreshNotice}</span><button onClick={()=>setModal('feeds')}>フィードの管理</button><button onClick={()=>setRefreshNotice('')}>閉じる</button></div>}
-    {isFeature?<>{view==='digest'&&<DigestView {...featureProps} reader={{...reader,articles:digestArticles}}/ >}{view==='stories'&&<StoriesView {...featureProps}/ >}{view==='notebook'&&<NotebookView {...featureProps}/ >}{view==='explore'&&<ExploreView {...featureProps}/ >}</>:<>
+    {isFeature?<>{view==='digest'&&<DigestView {...featureProps} reader={{...reader,articles:digestArticles}}/ >}{view==='notebook'&&<NotebookView {...featureProps}/ >}{view==='explore'&&<ExploreView {...featureProps}/ >}</>:<>
     {view==='for-you'&&!query&&<section className="welcome-banner"><div className="banner-copy"><div className="eyebrow"><span className="status-dot"/>A LITTLE MORE YOU</div><h2>好奇心が、次の発見を連れてくる。</h2><p>あなたの「好き」から、読むべきストーリーを。</p></div><button className="banner-action" onClick={()=>setModal('preferences')}>興味のあることを教える<ArrowRight size={15}/></button></section>}
     {view==='for-you'&&<div className="intelligence-toolbar"><div className="ranking-lenses" role="group" aria-label="おすすめの評価軸"><button className={lens==='interest'?'active':''} onClick={()=>setLens('interest')}><Heart size={14}/>関心度</button><button className={lens==='importance'?'active':''} onClick={()=>setLens('importance')}><Layers3 size={14}/>重要度</button></div><button className="ai-evaluate-button" disabled={!aiAvailable||aiBusy||!baseRanked.length} onClick={()=>void analyze()}>{aiBusy?<LoaderCircle size={14} className="spin"/>:<Sparkles size={14}/ >}{aiBusy?'AIが評価中…':'AIで選び直す'}</button></div>}{view==='for-you'&&<div className="ranking-explainer"><span>{lens==='interest'?'あなたの興味と自然文の好みを反映。探索枠は新しい視点を届けます。':'影響・緊急性を評価。AI未評価の記事は掲載状況と言葉からの推定です。'}</span><button onClick={()=>void checkAI()}>{aiAvailable?'AI利用設定済み':'AI接続の準備中'}</button></div>}{aiError&&view==='for-you'&&<p className="inline-ai-error" role="alert">{aiError}</p>}
     <div className="category-tabs" aria-label="記事のカテゴリ">{CATEGORIES.map(c=><button key={c} className={category===c?'active':''} onClick={()=>setCategory(c)}>{c}</button>)}</div>

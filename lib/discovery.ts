@@ -374,11 +374,6 @@ export function recentArticles(articles: Article[], now: Date, days = 7): Articl
   });
 }
 
-/** 画面に出すまとまり。既定では2つ以上の媒体が報じたものだけ（1つの媒体だけのまとまりは報道の比較にならない）。 */
-export function visibleStories(clusters: StoryCluster[], includeSingles: boolean): StoryCluster[] {
-  return includeSingles ? clusters : clusters.filter(cluster => new Set(cluster.articles.map(article => article.sourceId)).size > 1);
-}
-
 export function clusterStories(articles: Article[], readIds: string[], now = Date.now()): StoryCluster[] {
   const matches = storyMatches(importanceIndex(articles));
   const groups: Article[][] = [];
