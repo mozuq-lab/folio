@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { needsBacklogMigration, migrationPayload, retainArticle } from '../lib/backlog/migration.ts';
+import { attachContent, needsBacklogMigration, migrationPayload, retainArticle } from '../lib/backlog/migration.ts';
 import { DEFAULT_INTELLIGENCE } from '../lib/intelligence-types.ts';
 import { validateSyncDocument } from '../lib/cloud-library.ts';
 import { decodeState } from '../lib/storage.ts';
@@ -17,10 +17,10 @@ test('needsBacklogMigration: 未移行で保持対象外の記事か既読があ
   assert.equal(needsBacklogMigration(base({ backlogMigratedAt: NOW.toISOString() })), false);
 });
 
-test('migrationPayload: サンプル以外の全記事と、それを指す既読IDだけを返す', () => {
-  const p = migrationPayload(base());
+test('migrationPayload: サンプル以外の全記事と、その既読と本体の無い既読IDを返す', () => {
+  const p = migrationPayload(base({ read: ['saved', 'only-read', 'gone', 'sample'] }));
   assert.deepEqual(p.articles.map(a => a.id), ['saved', 'noted', 'only-read', 'unread']);
-  assert.deepEqual(p.read, ['saved', 'only-read']);
+  assert.deepEqual(p.read, ['saved', 'only-read', 'gone']);
 });
 
 test('retainArticle: 無ければ本文付きで追加し、あれば同じオブジェクトを返す', () => {
@@ -29,6 +29,16 @@ test('retainArticle: 無ければ本文付きで追加し、あれば同じオ�
   const added = retainArticle(r, a);
   assert.deepEqual(added.articles.at(-1), a);
   assert.equal(retainArticle(added, a), added);
+});
+
+test('attachContent: 同期データの記事に本文が無ければ端末の本文を入れ、それ以外は同じ状態を返す', () => {
+  const r = base();
+  const stored = { content: '端末の本文', fetchedAt: '2026-11-02T00:00:00Z' };
+  const attached = attachContent(r, 'noted', stored);
+  assert.deepEqual(attached.articles.find(a => a.id === 'noted'), { ...art('noted'), content: '端末の本文', contentFetchedAt: '2026-11-02T00:00:00Z' });
+  assert.equal(attached.articles.find(a => a.id === 'saved'), r.articles[0]);
+  assert.equal(attachContent(r, 'saved', stored), r);
+  assert.equal(attachContent(r, 'missing', stored), r);
 });
 
 test('backlogMigratedAt の有無どちらの文書も検証を通る', () => {

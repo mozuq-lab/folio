@@ -1,4 +1,5 @@
 import type { Article, Feed, ReaderState } from '../types.ts';
+import { toArticle } from '../personalization.ts';
 import { MAX_READ_BATCH } from './constants.ts';
 
 // 画面に渡す「表示用のreader」と、一覧・既読まわりの判断。どれも純粋関数。
@@ -93,18 +94,28 @@ export async function sendReadBatches(batches: string[][], send: (batch: string[
   return { sent, failedAt: null };
 }
 
-const withoutContent = (article: Article): Article => {
-  const copy = { ...article };
+// 1回の取り込みの記事数。サーバーの上限（1,000件）より小さくし、1回の処理時間を抑える。
+export const IMPORT_CHUNK = 250;
+
+// 既知の項目だけにし、本文は外す。古い文書の未知の項目で取り込みが400になり続けないようにする。
+const importArticle = (article: Article): Article => {
+  const copy = toArticle(article);
   delete copy.content;
   delete copy.contentFetchedAt;
   return copy;
 };
 
-/** 移行で送る POST /api/articles/import の本文。記事を1,000件ずつに分け、それぞれの記事の既読を添える。本文は送らない。 */
-export function importRequests(payload: { articles: Article[]; read: string[] }, size = MAX_READ_BATCH): ImportRequest[] {
+/**
+ * 移行で送る POST /api/articles/import の本文。記事を size 件ずつに分け、それぞれの記事の既読を添える。本文は送らない。
+ * 本体の無い既読IDは、記事の無い取り込みとして1,000件ずつ後ろに足す。
+ */
+export function importRequests(payload: { articles: Article[]; read: string[] }, size = IMPORT_CHUNK): ImportRequest[] {
   const read = new Set(payload.read);
-  return chunk(payload.articles, size).map(articles => ({
-    articles: articles.map(withoutContent),
+  const articleIds = new Set(payload.articles.map(article => article.id));
+  const withArticles = chunk(payload.articles, size).map(articles => ({
+    articles: articles.map(importArticle),
     read: articles.filter(article => read.has(article.id)).map(article => article.id),
   }));
+  const orphans = [...read].filter(id => !articleIds.has(id));
+  return [...withArticles, ...chunk(orphans, MAX_READ_BATCH).map(ids => ({ articles: [], read: ids }))];
 }

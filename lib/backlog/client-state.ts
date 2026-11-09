@@ -8,6 +8,14 @@ export type BacklogState = { ownerId: string; cursor: string | null; entries: Ma
 export type ReadBatch = { ids: string[]; read: boolean };
 export type ChangesPage = { entries: BacklogEntry[]; next: string; hasMore: boolean };
 
+// 差分の1ページの件数。サーバーの上限（1,000件）より小さくし、1回の処理時間を抑える。続きは hasMore を見て取りに行く。
+export const CHANGES_PAGE_SIZE = 250;
+
+/** GET /api/articles のURL。 */
+export function changesUrl(cursor: string | null, limit = CHANGES_PAGE_SIZE): string {
+  return `/api/articles?limit=${limit}${cursor === null ? '' : `&after=${encodeURIComponent(cursor)}`}`;
+}
+
 export const emptyBacklog = (ownerId: string): BacklogState => ({ ownerId, cursor: null, entries: new Map(), pendingReads: new Map() });
 
 /** 別の持ち主の状態は使わず、空の状態にする。 */
