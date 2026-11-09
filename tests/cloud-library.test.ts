@@ -37,6 +37,11 @@ test('不正なschema、prototype用key、NaN、不正な拡張フィールド�
   const unsafe=JSON.parse(JSON.stringify(document()));unsafe.reader.preferences.topicWeights=JSON.parse('{"__proto__":1}');assert.equal(validateSyncDocument(unsafe),false);
   const wrongContent=JSON.parse(JSON.stringify(document()));wrongContent.reader.articles=[{id:'a',title:'a',description:'',url:'https://example.com',sourceId:'s',sourceName:'s',publishedAt:'now',tags:[],readingMinutes:1,content:{bad:true}}];assert.equal(validateSyncDocument(wrongContent),false);
 });
+test('priority付きのfeedは通り、priorityの無いfeedも通る',()=>{
+  const base={id:'f',name:'n',url:'https://example.com/f.xml',website:'https://example.com',category:'c',color:'#000',initial:'F'};
+  for(const feeds of [[base],[{...base,priority:true}],[{...base,priority:false}]]){const d=document();d.reader.feeds=feeds;assert.equal(validateSyncDocument(d),true);}
+  const bad=document();bad.reader.feeds=[{...base,priority:'yes'}] as never;assert.equal(validateSyncDocument(bad),false);
+});
 test('4MBを超えるdocumentと不正revisionは保存しない',async()=>{
   const db=database();const oversized=document();oversized.intelligence.instructions='あ'.repeat(1500000);
   assert.equal(validateSyncDocument(oversized),true);
