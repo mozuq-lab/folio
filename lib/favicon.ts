@@ -122,9 +122,15 @@ export async function handleFavicon(request: Request, options: { fetcher?: typeo
   const fetcher = options.fetcher ?? fetch;
   const signal = AbortSignal.timeout(TIMEOUT_MS);
   let icon: { bytes: Uint8Array; type: string } | null = null;
+  // 5xxは次の候補を試し続けるが、最後まで見つからなければ「無い」とは決めずに保存しない。
+  let transient = false;
+  const tolerate = async <T,>(step: () => Promise<T>, fallback: T): Promise<T> => {
+    try { return await step(); } catch (error) { if (error instanceof TransientError) { transient = true; return fallback; } throw error; }
+  };
   try {
-    icon = await fetchIcon(`${site}/favicon.ico`, fetcher, signal);
-    if (!icon) for (const href of await iconLinks(site, fetcher, signal)) if ((icon = await fetchIcon(href, fetcher, signal))) break;
+    icon = await tolerate(() => fetchIcon(`${site}/favicon.ico`, fetcher, signal), null);
+    if (!icon) for (const href of await tolerate(() => iconLinks(site, fetcher, signal), [])) if ((icon = await tolerate(() => fetchIcon(href, fetcher, signal), null))) break;
+    if (!icon && transient) throw new TransientError();
   } catch {
     // 時間切れ・接続できない・5xxは一時的な失敗かもしれないので、「無い」として保存しない。
     return new Response(null, { status: 404, headers: { ...SAFE_HEADERS, 'Cache-Control': 'no-store' } });
