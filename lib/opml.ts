@@ -24,6 +24,20 @@ function normalize(raw:string):string {
   if(!safeUrl(raw)) throw invalid();
   const url=new URL(raw);url.hash='';url.hostname=url.hostname.toLowerCase().replace(/\.$/,'');return url.href;
 }
+/** Old subscriptions often still use http://. Read them as https:// (Folio only fetches HTTPS feeds). */
+function upgradeToHttps(raw:string):string|null {
+  if(!/^http:\/\//i.test(raw)) return null;
+  try { const url=new URL(raw);url.protocol='https:';return url.href; } catch { return null; }
+}
+function acceptUrl(raw:string):{url:string;upgraded:boolean}|null {
+  if(safeUrl(raw)) return {url:normalize(raw),upgraded:false};
+  const upgraded=upgradeToHttps(raw);
+  return upgraded&&safeUrl(upgraded)?{url:normalize(upgraded),upgraded:true}:null;
+}
+export type SkippedFeed = { name:string; url:string; reason:string };
+export type OpmlImport = { feeds:Feed[]; skipped:SkippedFeed[]; upgraded:number };
+const UNSAFE_REASON='公開されたHTTPSのURLとして読み込めません';
+const LIMIT_REASON=`一度に取り込めるのは${MAX_FEEDS}件までです`;
 const record=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
 const list=(value:unknown):unknown[]=>value==null?[]:Array.isArray(value)?value:[value];
 const text=(value:unknown):string=>typeof value==='string'?value.trim():'';
@@ -34,6 +48,11 @@ function feedId(url:string):string {
 }
 
 export function parseOpml(xml:string):Feed[] {
+  return parseOpmlDetailed(xml).feeds;
+}
+
+/** Parses an OPML file. Broken XML or non-OPML rejects the whole file; individual unusable feeds are skipped and reported. */
+export function parseOpmlDetailed(xml:string):OpmlImport {
   if(typeof xml!=='string'||new TextEncoder().encode(xml).byteLength>MAX_BYTES) throw new Error('OPMLは1MB以下のファイルを選んでください。');
   if(/<!\s*(?:DOCTYPE|ENTITY)\b/i.test(xml)||XMLValidator.validate(xml)!==true) throw invalid();
   let parsed:Record<string,unknown>;
@@ -41,7 +60,7 @@ export function parseOpml(xml:string):Feed[] {
   if(!Object.hasOwn(parsed,'opml')) throw invalid();
   const opml=record(parsed.opml);
   if(!Object.hasOwn(opml,'body')) throw invalid();
-  const feeds:Feed[]=[];const seen=new Set<string>();let count=0;let visited=0;
+  const feeds:Feed[]=[];const skipped:SkippedFeed[]=[];const seen=new Set<string>();let visited=0;let upgraded=0;
   const walk=(outlines:unknown,folders:string[],depth:number)=>{
     if(depth>50) throw invalid();
     for(const raw of list(outlines)) {
@@ -50,20 +69,25 @@ export function parseOpml(xml:string):Feed[] {
       const title=text(outline['@_title'])||text(outline['@_text']);
       const rawUrl=text(outline['@_xmlUrl']);
       if(Object.hasOwn(outline,'@_xmlUrl')) {
-        if(++count>MAX_FEEDS) throw new Error('一度に取り込めるフィードは500件までです。');
-        const url=normalize(rawUrl);
-        if(!seen.has(url)) {
-          seen.add(url);
-          const name=title||new URL(url).hostname;
-          const website=text(outline['@_htmlUrl']);
-          feeds.push({id:feedId(url),name,url,website:website&&safeUrl(website)?normalize(website):new URL(url).origin,category:folders.join(' / ')||'未分類',color:'#507b65',initial:Array.from(name)[0]||'F'});
+        const accepted=acceptUrl(rawUrl);
+        if(!accepted) skipped.push({name:title||rawUrl,url:rawUrl,reason:UNSAFE_REASON});
+        else if(!seen.has(accepted.url)) {
+          if(feeds.length>=MAX_FEEDS) skipped.push({name:title||rawUrl,url:accepted.url,reason:LIMIT_REASON});
+          else {
+            seen.add(accepted.url);
+            if(accepted.upgraded) upgraded++;
+            const url=accepted.url;
+            const name=title||new URL(url).hostname;
+            const website=acceptUrl(text(outline['@_htmlUrl']));
+            feeds.push({id:feedId(url),name,url,website:website?website.url:new URL(url).origin,category:folders.join(' / ')||'未分類',color:'#507b65',initial:Array.from(name)[0]||'F'});
+          }
         }
       }
       if(outline.outline!==undefined) walk(outline.outline,rawUrl?folders:title?[...folders,title]:folders,depth+1);
     }
   };
   walk(record(opml.body).outline,[],0);
-  return feeds;
+  return {feeds,skipped,upgraded};
 }
 function escapeXml(value:string):string {
   return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[char]!));
