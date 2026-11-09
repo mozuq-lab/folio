@@ -27,11 +27,22 @@ const ownerRange = (ownerId: string) => IDBKeyRange.bound([ownerId], [ownerId, [
 
 let opening: Promise<IDBDatabase | null> | null = null;
 function openDb(): Promise<IDBDatabase | null> {
-  opening ??= new Promise<IDBDatabase | null>(resolve => {
-    const timer = setTimeout(() => resolve(null), OPEN_TIMEOUT_MS);
-    const finish = (db: IDBDatabase | null) => { clearTimeout(timer); resolve(db); };
+  if (opening) return opening;
+  let attempt: Promise<IDBDatabase | null> | null = null;
+  attempt = new Promise<IDBDatabase | null>(resolve => {
+    let settled = false;
+    // 時間切れ・他のタブによる待たされ・失敗のときはメモリーで続け、次の操作で開き直す。
+    const giveUp = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (attempt && opening === attempt) opening = null;
+      resolve(null);
+    };
+    const timer = setTimeout(giveUp, OPEN_TIMEOUT_MS);
     try {
-      if (typeof indexedDB === 'undefined') { finish(null); return; }
+      // IndexedDBが無い環境では開き直さない（opening は null を返し続ける）。
+      if (typeof indexedDB === 'undefined') { settled = true; clearTimeout(timer); resolve(null); return; }
       const request = indexedDB.open(BACKLOG_DB_NAME, DB_VERSION);
       request.onupgradeneeded = () => {
         const db = request.result;
@@ -41,14 +52,20 @@ function openDb(): Promise<IDBDatabase | null> {
       };
       request.onsuccess = () => {
         const db = request.result;
+        // 諦めた後に開けた接続は使わずに閉じる。
+        if (settled) { db.close(); return; }
+        settled = true;
+        clearTimeout(timer);
         // 別のタブが新しい版を開くときは閉じ、次の操作で開き直す。
-        db.onversionchange = () => { db.close(); opening = null; };
-        finish(db);
+        db.onversionchange = () => { db.close(); if (opening === attempt) opening = null; };
+        resolve(db);
       };
-      request.onerror = () => finish(null);
-    } catch { finish(null); }
+      request.onerror = giveUp;
+      request.onblocked = giveUp;
+    } catch { giveUp(); }
   });
-  return opening;
+  opening = attempt;
+  return attempt;
 }
 
 const requestResult = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {

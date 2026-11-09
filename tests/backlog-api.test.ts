@@ -29,7 +29,8 @@ test('handleListChangesは差分を返し、他の利用者の記事は含めな
   await insertArticles(db, 'u2', 'z', [article('other', 'z')], NOW);
   const res = await handleListChanges(get('/api/articles'), { db, user: U1 });
   assert.equal(res.status, 200);
-  const body = await res.json() as { entries: { article: { id: string } }[]; next: string; hasMore: boolean };
+  const body = await res.json() as { ownerId: string; entries: { article: { id: string } }[]; next: string; hasMore: boolean };
+  assert.equal(body.ownerId, 'u1');
   assert.deepEqual(body.entries.map(e => e.article.id), ['x', 'y']);
   assert.equal(body.hasMore, false);
   const again = await (await handleListChanges(get(`/api/articles?after=${encodeURIComponent(body.next)}`), { db, user: U1 })).json() as { entries: unknown[] };
@@ -47,6 +48,7 @@ test('handleSetReadは既読にでき、他の利用者の記事は変えない'
   await insertArticles(db, 'u2', 'z', [article('x', 'z')], NOW);
   const res = await handleSetRead(post('/api/articles/read', { ids: ['x'], read: true }), { db, user: U1 }, NOW);
   assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ownerId: 'u1', updated: 1 });
   const rows = db.sqlite.prepare('SELECT user_id, read_at FROM folio_articles ORDER BY user_id').all() as { user_id: string; read_at: string | null }[];
   assert.ok(rows[0].read_at);
   assert.equal(rows[1].read_at, null);
