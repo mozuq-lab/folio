@@ -37,6 +37,13 @@ npm run cloudflare:dry-run
 
 - 同期する文書の検証（`lib/cloud-library.ts`）は未知の項目を拒否する。項目を足すときは任意項目にし、その項目が無い既存の文書・JSONバックアップ・ブラウザーのキャッシュが読み込めることをテストで確かめる。
 
+## 記事のバックログ
+
+- 記事本体は2か所に分かれる。定期取得した90日分はバックログ（`lib/backlog/`、D1の `folio_articles` と端末のIndexedDB）に置く。同期データには保持対象の記事（保存・メモ・AI参照）とその既読IDだけを置く。
+- バックログの記事や大量の既読IDを同期データに書かない。4MiBを超える。
+- 定期取得（`scheduled`）と更新（refresh）の経路で同期データを読み込まない。無料プランのCPU時間（10ミリ秒）を超える。購読の写しは `folio_feeds` を使う。
+- ブラウザーで動くコードから読み込んでよいのは `lib/backlog/types.ts`・`client-state.ts`・`view.ts`・`priority.ts`・`migration-runner.ts` だけ。`store.ts`・`schedule.ts`・`scheduled.ts`・`api.ts` は読み込まない。
+
 ## テストと開発環境の注意
 
 - テストはNode 24の型除去でTypeScriptをそのまま実行する。テストから読み込むモジュールでは import に `.ts` 拡張子を付け、`enum` やコンストラクター引数のプロパティ宣言を使わない。
