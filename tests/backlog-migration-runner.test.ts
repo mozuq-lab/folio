@@ -127,7 +127,8 @@ test('pruneLibrary: 保持対象でなくなった記事を外し、その既読
     storyReports: { s: { overview: '', developments: [{ text: '', articleIds: ['story'] }], perspectives: [], uncertainties: [] } },
   });
   const { reader: pruned, readHandOver } = pruneLibrary(r, i);
-  assert.deepEqual(ids(pruned.articles), ['saved', 'noted', 'digest', 'chat', 'story']);
+  // 「ニュースのまとまり」の比較結果は保持の対象にしない（機能をなくしたため）。
+  assert.deepEqual(ids(pruned.articles), ['saved', 'noted', 'digest', 'chat']);
   assert.equal(pruned.articles[0].content, '本文');
   assert.deepEqual(pruned.read, ['saved']);
   assert.deepEqual(readHandOver, ['unsaved']);
