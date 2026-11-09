@@ -21,6 +21,7 @@ export interface Feed {
   category: string;
   color: string;
   initial: string;
+  priority?: boolean;
 }
 export interface Preferences {
   interests: string[];
@@ -37,6 +38,7 @@ export interface ReaderState {
   feeds: Feed[];
   saved: string[];
   read: string[];
+  backlogMigratedAt?: string;
   feedback: Feedback;
   preferences: Preferences;
   lastUpdated: string | null;

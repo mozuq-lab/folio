@@ -14,3 +14,4 @@ test('同じ記事が別ソースから届いても既読やfeedback用のIDを�
 
 test('更新の完了前に購読解除したソースの記事を復活させない',()=>{assert.deepEqual(mergeSubscribedArticles([], [a('late')], [], []),[]);});
 test('RSS再取得でも取得済み本文を失わない',()=>{const old={...a('full'),content:'取得済み本文',contentFetchedAt:'2026-11-06T00:00:00Z'};const result=mergeArticles([old],[a('full')],[]);assert.equal(result[0].content,'取得済み本文');});
+test('priority付きのfeedも無いfeedも復元できる',()=>{ const base={id:'f',name:'n',url:'u',website:'w',category:'c',color:'#000',initial:'F'}; for(const feeds of [[base],[{...base,priority:true}]]){const state={...fallback,feeds};assert.deepEqual(decodeState(JSON.stringify(state),fallback),state);} assert.deepEqual(decodeState(JSON.stringify({...fallback,feeds:[{...base,priority:'x'}]}),fallback),fallback); });

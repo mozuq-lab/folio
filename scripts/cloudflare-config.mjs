@@ -46,6 +46,7 @@ export function workerConfiguration(settings) {
   workers_dev:true,preview_urls:false,
   assets:{binding:'ASSETS',run_worker_first:true},
   ai:{binding:'AI'},
+  triggers:{crons:['*/5 * * * *']},
   d1_databases:[{binding:'DB',database_name:settings.databaseName,database_id:settings.databaseId,migrations_dir:resolve('drizzle')}],
   vars:{FOLIO_DEPLOYMENT:'self-hosted-cloudflare',FOLIO_ACCESS_TEAM_DOMAIN:settings.accessTeamDomain,FOLIO_ACCESS_AUD:settings.accessAudience,FOLIO_ALLOWED_EMAILS:settings.allowedEmails.join(',')},
   ...(settings.customDomain?{routes:[{pattern:settings.customDomain,custom_domain:true}]}:{}),

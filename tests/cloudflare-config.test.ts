@@ -26,3 +26,6 @@ test('開発用の未設定値はビルド可能で、通常本番デプロイ�
  assert.doesNotThrow(()=>parseCloudflareSettings(initial));
  assert.throws(()=>parseCloudflareSettings(initial,{deployment:true}));
 });
+test('定期実行のCronを5分ごとに設定する',()=>{
+ assert.deepEqual(workerConfiguration(parseCloudflareSettings(settings,{deployment:true})).triggers,{crons:['*/5 * * * *']});
+});

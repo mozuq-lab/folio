@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Article, Preferences } from '../lib/types.ts';
 import type { ArticleNote, NaturalProfile } from '../lib/intelligence-types.ts';
-import { applyNaturalProfile, buildReadingPlan, clusterStories, scoreImportance, scoreNaturalPreference, searchLibrary, selectExploration } from '../lib/discovery.ts';
+import { applyNaturalProfile, buildReadingPlan, clusterStories, recentArticles, scoreImportance, scoreNaturalPreference, searchLibrary, selectExploration } from '../lib/discovery.ts';
 
 const now = Date.parse('2026-11-06T12:00:00Z');
 const article = (id: string, overrides: Partial<Article> = {}): Article => ({ id, title: '独立した記事 ' + id, description: '', url: 'https://example.com/' + id, sourceId: id, sourceName: id, publishedAt: '2026-11-06T10:00:00Z', tags: [], readingMinutes: 3, ...overrides });
@@ -123,4 +123,12 @@ test('自然文profileは明示muteを除外しboostと深さで並び替える'
   assert.ok(scoreNaturalPreference(rust, profile) > scoreNaturalPreference(plain, profile));
   assert.deepEqual(applyNaturalProfile([plain, rust], null), [plain, rust]);
   assert.equal(scoreNaturalPreference(plain, null), 0);
+});
+
+test('直近の記事は公開日時が指定日数以内のものだけを入力順に返し、日時の読めない記事を除く', () => {
+  const at = (id: string, publishedAt: string) => article(id, { publishedAt });
+  const input = [at('today', '2026-11-06T11:00:00Z'), at('old', '2026-10-30T11:59:59Z'), at('edge', '2026-10-30T12:00:00Z'), at('bad', 'broken'), at('future', '2026-11-07T00:00:00Z')];
+  assert.deepEqual(recentArticles(input, new Date(now)).map(a => a.id), ['today', 'edge', 'future']);
+  assert.deepEqual(recentArticles(input, new Date(now), 1).map(a => a.id), ['today', 'future']);
+  assert.deepEqual(recentArticles([], new Date(now)), []);
 });
