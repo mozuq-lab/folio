@@ -21,6 +21,7 @@ export interface Feed {
   category: string;
   color: string;
   initial: string;
+  priority?: boolean;
 }
 export interface Preferences {
   interests: string[];
