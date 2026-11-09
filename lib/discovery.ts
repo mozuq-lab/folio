@@ -23,6 +23,7 @@ const textOf = (article: Article): string => parsedArticle(article).text;
 interface ParsedArticle {
   order: number;
   url: string | null;
+  fragment: string;
   title: string;
   titleTokens: Set<string>;
   /** 概要のtokenは見出しが近い記事どうしでだけ使うので、必要になってから作る（descriptionTokensOf）。 */
@@ -84,6 +85,10 @@ function tokens(text: string): string[] {
   return result;
 }
 
+function fragmentOf(value: string): string {
+  try { return new URL(value).hash; } catch { return ''; }
+}
+
 function canonicalUrl(value: string): string | null {
   try {
     const url = new URL(value);
@@ -103,7 +108,7 @@ function parsedArticle(article: Article): ParsedArticle {
   const title = normalize(plain(article.title));
   const published = Date.parse(article.publishedAt);
   const parsed: ParsedArticle = {
-    order: parsedOrder++, url: canonicalUrl(article.url), title,
+    order: parsedOrder++, url: canonicalUrl(article.url), fragment: fragmentOf(article.url), title,
     titleTokens: new Set(tokens(title)), description: article.description, descriptionTokens: null,
     entities: new Set((plain(article.title).normalize('NFKC').match(/\b[A-Z][A-Za-z\d]+\b/g) ?? []).map(normalize).filter(term => !STOP_WORDS.has(term))),
     numbers: [...title.matchAll(/\d+(?:\.\d+)?/g)].map(match => match[0]).join(','),
@@ -128,7 +133,8 @@ function intersectionSize(left: Set<string>, right: Set<string>): number {
 
 function sameStory(a: Article, b: Article): boolean {
   const left = parsedArticle(a), right = parsedArticle(b);
-  if (left.url && left.url === right.url) return true;
+  // 同じフィードが同じページ内の別の項目（#1・#2…）を指す場合は、URLだけでは同じニュースとしない。
+  if (left.url && left.url === right.url && (a.sourceId !== b.sourceId || left.fragment === right.fragment)) return true;
   if (left.published && right.published && Math.abs(left.published - right.published) > 7 * DAY) return false;
   if (!left.title || !right.title) return false;
   if (left.title === right.title) return true;
@@ -366,6 +372,11 @@ export function recentArticles(articles: Article[], now: Date, days = 7): Articl
     const published = Date.parse(article.publishedAt);
     return Number.isFinite(published) && published >= since;
   });
+}
+
+/** 画面に出すまとまり。既定では2つ以上の媒体が報じたものだけ（1つの媒体だけのまとまりは報道の比較にならない）。 */
+export function visibleStories(clusters: StoryCluster[], includeSingles: boolean): StoryCluster[] {
+  return includeSingles ? clusters : clusters.filter(cluster => new Set(cluster.articles.map(article => article.sourceId)).size > 1);
 }
 
 export function clusterStories(articles: Article[], readIds: string[], now = Date.now()): StoryCluster[] {
