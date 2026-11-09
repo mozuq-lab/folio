@@ -7,13 +7,28 @@ export const MAX_ARTICLES = 200;
 type XmlNode = Record<string, unknown>;
 type ParsedFeed = { feed: Feed; articles: Article[] };
 
+export type FeedErrorKind = 'network' | 'http' | 'format' | 'timeout';
+export type FeedFetchResult =
+  | { status: 'ok'; feed: ParsedFeed; etag: string | null; lastModified: string | null }
+  | { status: 'not-modified' };
+
 export class FeedError extends Error {
   status: number;
-  constructor(message: string, status = 422) {
+  /** Set where a 502 can be told apart: connection failure vs. an HTTP-level problem. */
+  kind?: 'network' | 'http';
+  constructor(message: string, status = 422, kind?: 'network' | 'http') {
     super(message);
     this.name = 'FeedError';
     this.status = status;
+    this.kind = kind;
   }
+}
+
+export function feedErrorKind(error: unknown): FeedErrorKind {
+  if (!(error instanceof FeedError)) return 'format';
+  if (error.status === 504) return 'timeout';
+  if (error.status === 502) return error.kind === 'network' ? 'network' : 'http';
+  return 'format';
 }
 
 /** Only public HTTPS destinations are accepted, including on every redirect. */
@@ -230,6 +245,20 @@ async function readLimitedBody(response: Response): Promise<string> {
 }
 
 export async function fetchFeed(feedUrl: string, fetcher: typeof fetch = fetch): Promise<ParsedFeed> {
+  const result = await fetchFeedConditional(feedUrl, { fetcher });
+  // No validators were sent, so a 304 here would be a misbehaving origin.
+  if (result.status !== 'ok') throw new FeedError('配信元からRSSを取得できませんでした（HTTP 304）。', 502, 'http');
+  return result.feed;
+}
+
+export async function fetchFeedConditional(
+  feedUrl: string,
+  options: { etag?: string | null; lastModified?: string | null; fetcher?: typeof fetch } = {},
+): Promise<FeedFetchResult> {
+  const fetcher = options.fetcher ?? fetch;
+  const headers: Record<string, string> = { Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1' };
+  if (options.etag) headers['If-None-Match'] = options.etag;
+  if (options.lastModified) headers['If-Modified-Since'] = options.lastModified;
   if (!isSafeFeedUrl(feedUrl)) throw new FeedError('公開されたHTTPSのRSS URLを入力してください。', 400);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -239,30 +268,35 @@ export async function fetchFeed(feedUrl: string, fetcher: typeof fetch = fetch):
       if (!isSafeFeedUrl(currentUrl)) throw new FeedError('安全な公開HTTPS URLへのリダイレクトのみ読み込めます。', 400);
       const response = await fetcher(currentUrl, {
         redirect: 'manual', signal: controller.signal,
-        headers: { Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1' },
+        headers,
       });
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.headers.get('location');
         await response.body?.cancel();
-        if (!location || redirects === 3) throw new FeedError('リダイレクト回数が多すぎるか、転送先が不正です。', 502);
-        try { currentUrl = new URL(location, currentUrl).href; } catch { throw new FeedError('リダイレクト先のURLが不正です。', 502); }
+        if (!location || redirects === 3) throw new FeedError('リダイレクト回数が多すぎるか、転送先が不正です。', 502, 'http');
+        try { currentUrl = new URL(location, currentUrl).href; } catch { throw new FeedError('リダイレクト先のURLが不正です。', 502, 'http'); }
         continue;
+      }
+      if (response.status === 304) {
+        await response.body?.cancel();
+        return { status: 'not-modified' };
       }
       if (!response.ok) {
         await response.body?.cancel();
-        throw new FeedError(`配信元からRSSを取得できませんでした（HTTP ${response.status}）。`, 502);
+        throw new FeedError(`配信元からRSSを取得できませんでした（HTTP ${response.status}）。`, 502, 'http');
       }
       if (/text\/html|application\/xhtml\+xml/i.test(response.headers.get('content-type') ?? '')) {
         await response.body?.cancel();
         throw new FeedError('HTMLページではなく、RSS / AtomのURLを入力してください。');
       }
-      return parseFeed(await readLimitedBody(response), feedUrl);
+      const feed = parseFeed(await readLimitedBody(response), feedUrl);
+      return { status: 'ok', feed, etag: response.headers.get('etag'), lastModified: response.headers.get('last-modified') };
     }
-    throw new FeedError('リダイレクト先を取得できませんでした。', 502);
+    throw new FeedError('リダイレクト先を取得できませんでした。', 502, 'http');
   } catch (error) {
     if (error instanceof FeedError) throw error;
     if (controller.signal.aborted) throw new FeedError('RSSの取得がタイムアウトしました。少し待ってお試しください。', 504);
-    throw new FeedError('配信元に接続できませんでした。URLを確認してお試しください。', 502);
+    throw new FeedError('配信元に接続できませんでした。URLを確認してお試しください。', 502, 'network');
   } finally {
     clearTimeout(timeout);
   }
