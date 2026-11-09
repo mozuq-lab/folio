@@ -181,3 +181,23 @@ test('取り込みは記事も既読も1000件までで、超えるとエラー�
   await assert.rejects(importArticles(db, 'u1', [], many(1001).map(a => a.id), NOW), BacklogInputError);
   assert.deepEqual(await importArticles(db, 'u1', many(1000), [], NOW), { inserted: 1000, markedRead: 0 });
 });
+
+test('取り込みの既読は、URLが同じで別IDのサーバーの行にも付く', async () => {
+  const db = createTestD1();
+  await insertArticles(db, 'u1', 'f1', [article('server', { url: 'https://example.com/same' })], NOW);
+  const local = article('local', { url: 'https://example.com/same' });
+  assert.deepEqual(await importArticles(db, 'u1', [local], ['local'], NOW), { inserted: 0, markedRead: 1 });
+  const { entries } = await listChanges(db, 'u1', null);
+  assert.deepEqual(entries.map(e => [e.article.id, e.readAt]), [['server', NOW.toISOString()]]);
+  assert.deepEqual(await importArticles(db, 'u1', [local], ['local'], NOW), { inserted: 0, markedRead: 0 });
+});
+
+test('取り込みの既読は、記事の無い既読IDでもサーバーの行に付き、他の利用者の同じURLは変えない', async () => {
+  const db = createTestD1();
+  await insertArticles(db, 'u1', 'f1', many(100), NOW);
+  await insertArticles(db, 'u2', 'f1', [article('local00000', { url: 'https://example.com/a00000' })], NOW);
+  const locals = many(100, 'local').map((a, i) => ({ ...a, url: `https://example.com/a${String(i).padStart(5, '0')}` }));
+  const result = await importArticles(db, 'u1', locals, [...locals.map(a => a.id), 'orphan'], NOW);
+  assert.deepEqual(result, { inserted: 0, markedRead: 100 });
+  assert.equal((await listChanges(db, 'u2', null)).entries[0].readAt, null);
+});

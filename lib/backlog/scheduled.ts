@@ -41,6 +41,9 @@ export async function runScheduledFetch(deps: { db: Db; now: Date; allowedEmails
     if (outcome.error) summary.failed++;
     else summary.fetched++;
   }
-  if (isPurgeWindow(now)) summary.purged = await purgeExpired(db, now);
+  if (isPurgeWindow(now)) {
+    // 削除に失敗しても waitUntil を失敗させない。次の日の削除で消える。
+    try { summary.purged = await purgeExpired(db, now); } catch { summary.failed++; }
+  }
   return summary;
 }

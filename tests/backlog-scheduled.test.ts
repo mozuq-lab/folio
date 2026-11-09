@@ -93,3 +93,11 @@ test('記録に失敗しても挿入済みの件数は数える', async () => {
   const result = await runScheduledFetch({ db, now: NOW, allowedEmails: ALLOWED, fetcher: (async () => new Response(rss('x', 'y'))) as typeof fetch });
   assert.deepEqual(result, { fetched: 0, inserted: 2, failed: 1, purged: 0 });
 });
+
+test('期限切れ削除が失敗しても投げず、失敗として数える', async () => {
+  const db = await setup([]);
+  const original = db.prepare.bind(db);
+  (db as { prepare: typeof db.prepare }).prepare = ((sql: string) => { if (sql.startsWith('DELETE FROM folio_articles')) throw new Error('boom'); return original(sql); }) as typeof db.prepare;
+  const result = await runScheduledFetch({ db, now: new Date('2026-11-09T03:02:00.000Z'), allowedEmails: ALLOWED, fetcher: (async () => new Response(rss())) as typeof fetch });
+  assert.deepEqual(result, { fetched: 0, inserted: 0, failed: 1, purged: 0 });
+});

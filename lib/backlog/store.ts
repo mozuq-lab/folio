@@ -71,7 +71,8 @@ function decodeCursor(cursor: string | null): [number, string] {
 
 type Row = { article_id: string; feed_id: string; fetched_at: string; read_at: string | null; updated_seq: number; payload: string };
 
-export async function listChanges(db: Db, userId: string, cursor: string | null, limit = MAX_CHANGES_PAGE) {
+/** 差分の1ページ。payload は保存したJSON文字列のまま返す（応答に埋め込めば解析せずに済む）。 */
+export async function listChangeRows(db: Db, userId: string, cursor: string | null, limit = MAX_CHANGES_PAGE) {
   const [seq, id] = decodeCursor(cursor);
   const size = Math.min(Math.max(Math.floor(limit) || 1, 1), MAX_CHANGES_PAGE);
   const { results } = await db.prepare(
@@ -82,10 +83,15 @@ export async function listChanges(db: Db, userId: string, cursor: string | null,
   const page = results.slice(0, size);
   const last = page[page.length - 1];
   return {
-    entries: page.map((row): BacklogEntry => ({ article: JSON.parse(row.payload) as StoredArticle, feedId: row.feed_id, fetchedAt: row.fetched_at, readAt: row.read_at })),
+    rows: page.map(row => ({ payload: row.payload, feedId: row.feed_id, fetchedAt: row.fetched_at, readAt: row.read_at })),
     next: last ? encodeCursor(last.updated_seq, last.article_id) : encodeCursor(seq, id),
     hasMore: results.length > size,
   };
+}
+
+export async function listChanges(db: Db, userId: string, cursor: string | null, limit = MAX_CHANGES_PAGE) {
+  const { rows, next, hasMore } = await listChangeRows(db, userId, cursor, limit);
+  return { entries: rows.map(({ payload, ...rest }): BacklogEntry => ({ article: JSON.parse(payload) as StoredArticle, ...rest })), next, hasMore };
 }
 
 export async function setRead(db: Db, userId: string, articleIds: string[], read: boolean, now: Date) {
@@ -93,10 +99,25 @@ export async function setRead(db: Db, userId: string, articleIds: string[], read
   return runInBatches(db, userId, readStatements(db, userId, articleIds, read, now));
 }
 
+// 取り込みの既読。同じURLの記事が別IDで既にあれば（定期取得が先に入れた行など）その行も既読にする。
+// 1文にIDとURLを合わせて90個まで（＋利用者・時刻）。
+function importReadStatements(db: Db, userId: string, articles: Article[], readIds: string[], now: Date) {
+  const urlOf = new Map(articles.map(article => [article.id, article.url]));
+  return chunks([...new Set(readIds)], IDS_PER_STATEMENT / 2).map(ids => {
+    const urls = [...new Set(ids.flatMap(id => urlOf.has(id) ? [urlOf.get(id)!] : []))];
+    const idList = ids.map((_, i) => `?${i + 3}`).join(',');
+    const urlList = urls.map((_, i) => `?${i + 3 + ids.length}`).join(',');
+    return db.prepare(
+      `UPDATE folio_articles SET read_at = ?2, updated_seq = ${SEQ}
+       WHERE user_id = ?1 AND (article_id IN (${idList})${urls.length ? ` OR url IN (${urlList})` : ''}) AND read_at IS NULL`,
+    ).bind(userId, now.toISOString(), ...ids, ...urls);
+  });
+}
+
 export async function importArticles(db: Db, userId: string, articles: Article[], readIds: string[], now: Date) {
   if (articles.length > MAX_IMPORT || readIds.length > MAX_IMPORT) throw new BacklogInputError(`一度に取り込めるのは記事・既読ともに${MAX_IMPORT}件までです。`);
   const inserted = await runInBatches(db, userId, insertStatements(db, userId, article => article.sourceId, articles, now));
-  const markedRead = await runInBatches(db, userId, readStatements(db, userId, readIds, true, now));
+  const markedRead = await runInBatches(db, userId, importReadStatements(db, userId, articles, readIds, now));
   return { inserted, markedRead };
 }
 
