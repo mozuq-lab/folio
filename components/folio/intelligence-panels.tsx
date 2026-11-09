@@ -4,7 +4,7 @@ import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { ArrowUpRight, Bookmark, BookOpen, Check, Clock3, Compass, FileText, Layers3, LoaderCircle, MessageSquare, Search, Sparkles, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react';
 import type { Article, ReaderState } from '../../lib/types';
 import type { AIRequest, AIResult, ArticleNote, DigestResult, IntelligenceState, StoryReport } from '../../lib/intelligence-types';
-import { buildReadingPlan, clusterStories, recentArticles, searchLibrary, selectExploration } from '../../lib/discovery';
+import { buildReadingPlan, clusterStories, recentArticles, searchLibrary, selectExploration, visibleStories } from '../../lib/discovery';
 import './intelligence-panels.css';
 
 export interface FeaturePanelProps {
@@ -95,7 +95,7 @@ export function StoriesView(props: FeaturePanelProps) {
   const recent = useMemo(() => recentArticles(reader.articles, new Date()), [reader.articles]);
   const clusters = useMemo(() => clusterStories(recent, reader.read), [recent, reader.read]);
   const readIds = useMemo(() => new Set(reader.read), [reader.read]);
-  const shown = clusters.filter(cluster => includeSingles || cluster.articles.length > 1);
+  const shown = visibleStories(clusters, includeSingles);
   async function compare(id: string, articles: Article[]) {
     if (!aiAvailable || aiBusy || pending) return;
     setPending(id); setError('');
@@ -106,9 +106,9 @@ export function StoriesView(props: FeaturePanelProps) {
       setIntelligence(current => ({ ...current, storyReports: { ...current.storyReports, [id]: result.report } }));
     } catch (error) { setError(errorMessage(error)); } finally { setPending(null); }
   }
-  return <div className="fi-panel"><div className="fi-toolbar"><p className="fi-copy">同じニュースをまとめて、続報や媒体の違いを読み比べる。</p><label className="fi-checkbox"><input type="checkbox" checked={includeSingles} onChange={event => setIncludeSingles(event.target.checked)} />単独の記事も表示</label></div>
+  return <div className="fi-panel"><div className="fi-toolbar"><p className="fi-copy">同じニュースをまとめて、続報や媒体の違いを読み比べる。</p><label className="fi-checkbox"><input type="checkbox" checked={includeSingles} onChange={event => setIncludeSingles(event.target.checked)} />1つの媒体だけのまとまりも表示</label></div>
     <AIStatus available={aiAvailable} label={props.aiLabel} /><ErrorNotice message={error} />
-    {!shown.length && <Empty>{reader.articles.length ? '複数の記事で報じられたニュースはまだありません。単独の記事も表示できます。' : 'フィードを追加すると、同じニュースの記事をここにまとめます。'}</Empty>}
+    {!shown.length && <Empty>{reader.articles.length ? '複数の媒体で報じられたニュースはまだありません。「1つの媒体だけのまとまりも表示」で、ほかの記事も見られます。' : 'フィードを追加すると、同じニュースの記事をここにまとめます。'}</Empty>}
     {shown.map(cluster => <article className="fi-card fi-story" key={cluster.id}><div className="fi-heading"><span className="fi-badge"><Layers3 size={14} />{cluster.articles.length}記事 · {new Set(cluster.articles.map(article => article.sourceId)).size}媒体</span><span className="fi-meta">既読 {cluster.readArticles.length} / 未読 {cluster.unreadArticles.length}</span></div>
       <h2>{cluster.title}</h2>
       {cluster.newCoverage.length > 0 && <div className="fi-coverage"><h3>新着の報道</h3><p className="fi-help">未読記事の見出し・概要の抜粋です。新しい事実の判定ではありません。</p><ul>{cluster.newCoverage.map((text, i) => <li key={i}>{text}</li>)}</ul></div>}

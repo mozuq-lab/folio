@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadBacklog, saveBacklog } from '../lib/backlog/client-db.ts';
 import { acknowledgeReads, applyChanges, changesUrl, expireEntries, forOwner, parseChanges, queueRead, takePendingBatches, type BacklogState } from '../lib/backlog/client-state.ts';
+import { refreshErrorOf, refreshResultOf, runRefresh, type RefreshFailure } from '../lib/backlog/refresh.ts';
 import type { BacklogEntry } from '../lib/backlog/types.ts';
 import type { Article } from '../lib/types.ts';
 
@@ -14,10 +15,11 @@ const MAX_PAGES_PER_SYNC = 800;
 const OFFLINE_ERROR = 'サーバーに接続できません。接続後に同期します。';
 const LOAD_ERROR = '記事を読み込めませんでした。';
 const READ_ERROR = '既読を保存できませんでした。';
-const REFRESH_ERROR = '取得に失敗しました';
 const OWNER_ERROR = '別のアカウントでログインしています。ページを再読み込みしてください。';
 
 type View = { state: BacklogState | null; lastError: string; articles: Article[] };
+/** completed：すべて頼み終えて差分も受け取れた。stopped：接続できないなどで途中で止めた（失敗の件数は途中までの分）。 */
+export type RefreshOutcome = { completed: boolean; stopped: boolean; failed: RefreshFailure[] };
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const errorText = (body: unknown, fallback: string) => isRecord(body) && typeof body.error === 'string' ? body.error : fallback;
 
@@ -254,27 +256,30 @@ class BacklogSync {
     this.setErrors({ sync: '' });
   }
 
-  /** 取得と差分の受け取りがすべて成功したら true。 */
-  async refreshFeeds(feedIds: string[]): Promise<boolean> {
+  /**
+   * サーバーに feedIds の取得を頼み、終わったら差分を受け取る。
+   * completed は、すべて頼み終えて差分も受け取れたか。取得できなかったフィードは failed に入る。
+   */
+  async refreshFeeds(feedIds: string[], onProgress?: (done: number, total: number) => void): Promise<RefreshOutcome> {
     await this.loading;
     // 持ち主を確かめる前は、先に差分を1回取得して確かめる。
     if (!this.verified) await (this.syncing ?? this.sync());
-    if (!this.active() || !this.verified) return false;
-    let failed = false;
-    // 無料プランのCPU上限のため、サーバーには1フィードずつ順に頼む。
-    for (const feedId of feedIds) {
-      if (!this.active()) return false;
+    if (!this.active() || !this.verified) return { completed: false, stopped: true, failed: [] };
+    // 1回のリクエストで取得するのは1フィードだけ（無料プランのCPU上限のため）。数件ずつ並行して頼む。
+    const { stopped, failed } = await runRefresh(feedIds, async feedId => {
+      if (!this.active()) return 'stop';
       try {
         const response = await this.request(`/api/feeds/refresh?feed=${encodeURIComponent(feedId)}`, { method: 'POST' }, REFRESH_TIMEOUT_MS);
-        const body: unknown = await response.json().catch(() => null);
-        // 404はまだサーバーに同期されていないフィード。次の同期後に取得できる。
-        if (response.status === 404) continue;
-        if (!response.ok || (isRecord(body) && typeof body.error === 'string')) failed = true;
-      } catch { this.setErrors({ sync: OFFLINE_ERROR }); return false; }
-    }
+        return refreshResultOf(feedId, response.status, await response.json().catch(() => null));
+      } catch (error) {
+        const outcome = refreshErrorOf(feedId, error);
+        if (outcome === 'stop') this.setErrors({ sync: OFFLINE_ERROR });
+        return outcome;
+      }
+    }, { onProgress });
+    if (stopped) return { completed: false, stopped: true, failed };
     await this.sync();
-    if (failed) this.setErrors({ sync: REFRESH_ERROR });
-    return !failed && !!this.active() && this.syncError === '';
+    return { completed: !!this.active() && this.syncError === '', stopped: false, failed };
   }
 }
 
@@ -326,7 +331,8 @@ export function useBacklog(ownerId: string | null) {
   }, [ownerId]);
   const setRead = useCallback((ids: string[], read: boolean) => { controllerFor()?.setRead(ids, read); }, [controllerFor]);
   const sync = useCallback(async () => { await controllerFor()?.sync(); }, [controllerFor]);
-  const refreshFeeds = useCallback(async (feedIds: string[]) => (await controllerFor()?.refreshFeeds(feedIds)) ?? false, [controllerFor]);
+  const refreshFeeds = useCallback(async (feedIds: string[], onProgress?: (done: number, total: number) => void): Promise<RefreshOutcome> =>
+    (await controllerFor()?.refreshFeeds(feedIds, onProgress)) ?? { completed: false, stopped: true, failed: [] }, [controllerFor]);
   // まとめて既読用。送れたかどうかを返す（送れなかった分も端末には残る）。
   const sendRead = useCallback(async (ids: string[], read: boolean) => (await controllerFor()?.setReadAndSend(ids, read)) ?? false, [controllerFor]);
 
