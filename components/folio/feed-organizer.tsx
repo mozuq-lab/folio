@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type DragEvent, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { ArrowDown, ArrowUp, Check, FolderPlus, GripVertical, Pencil, Search, Tags, Trash2, X } from 'lucide-react';
 import { FeedIcon } from './feed-icon';
 import { formatFetchState, type FeedFetchState } from '../../lib/backlog/priority';
@@ -21,6 +21,8 @@ export type FeedOrganizerProps = {
   /** 分類を変える。結果の分類に合わせて各フィードの category も呼び出し側でそろえる。 */
   onOrganize: (change: (folders: FeedFolder[]) => FeedFolder[]) => void;
   onMoveUnfiled: (from: number, to: number) => void;
+  /** 分類の名前を変えたとき（サイドバーの開閉の状態を引き継ぐため）。 */
+  onFolderRenamed?: (from: string, to: string) => void;
 };
 
 /** フィードの管理の「分類」と「購読中のフィード」。並び替えはドラッグか ↑↓ ボタン。フィードは複数の分類に入れる。 */
@@ -32,6 +34,22 @@ export function FeedOrganizer(props: FeedOrganizerProps) {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [drag, setDrag] = useState<Drag>(null);
+  const [announcement, setAnnouncement] = useState('');
+  const root = useRef<HTMLDivElement>(null);
+  // ↑↓ で動かしたあと、並び直した行の同じボタン（端に着いて押せなければ反対のボタン）にフォーカスを戻す。
+  const focusAfterMove = useRef<{ key: string; direction: 'up' | 'down' } | null>(null);
+  useEffect(() => {
+    const target = focusAfterMove.current;
+    if (!target || !root.current) return;
+    focusAfterMove.current = null;
+    const find = (direction: string) => root.current?.querySelector<HTMLButtonElement>(`[data-move="${CSS.escape(`${target.key}:${direction}`)}"]`);
+    const button = find(target.direction);
+    (button && !button.disabled ? button : find(target.direction === 'up' ? 'down' : 'up'))?.focus();
+  });
+  const moved = (key: string, label: string, direction: 'up' | 'down', position: number) => {
+    focusAfterMove.current = { key, direction };
+    setAnnouncement(`「${label}」を${position}番目に移動しました。`);
+  };
 
   const create = (event: FormEvent) => {
     event.preventDefault();
@@ -43,7 +61,7 @@ export function FeedOrganizer(props: FeedOrganizerProps) {
     event.preventDefault();
     const result = renameFolder(folders, from, draftName);
     setError(result.error ?? '');
-    if (!result.error) { onOrganize(current => renameFolder(current, from, draftName).folders); setEditing(null); }
+    if (!result.error) { onOrganize(current => renameFolder(current, from, draftName).folders); props.onFolderRenamed?.(from, draftName.trim()); setEditing(null); }
   };
   // 名前の変更中や分類の選択中は、入力欄を操作できるようにドラッグを止める。
   const dragProps = (target: Exclude<Drag, null>, onDrop: (from: number) => void, enabled = true): DragHandlers => ({
@@ -60,7 +78,8 @@ export function FeedOrganizer(props: FeedOrganizerProps) {
   const matches = filterFeeds(feeds, query);
   const searching = query.trim().length > 0;
 
-  return <>
+  return <div ref={root}>
+    <p className="visually-hidden" aria-live="polite">{announcement}</p>
     <div className="modal-section-title"><h3>分類</h3><span>{folders.length}件</span></div>
     <p className="organizer-help">ドラッグするか ↑↓ で並び替えます。分類を消しても、中のフィードの購読は続きます。</p>
     <form className="folder-create" onSubmit={create}>
@@ -79,8 +98,8 @@ export function FeedOrganizer(props: FeedOrganizerProps) {
           </form>
           : <>
             <span className="folder-item-name">{folder.name}</span><small>{folder.feedIds.length}件</small>
-            <button className="icon-button" type="button" aria-label={`${folder.name}を上へ`} disabled={index === 0} onClick={() => onOrganize(current => moveFolder(current, index, index - 1))}><ArrowUp size={14} /></button>
-            <button className="icon-button" type="button" aria-label={`${folder.name}を下へ`} disabled={index === folders.length - 1} onClick={() => onOrganize(current => moveFolder(current, index, index + 1))}><ArrowDown size={14} /></button>
+            <button className="icon-button" type="button" data-move={`folder:${folder.name}:up`} aria-label={`${folder.name}を上へ`} disabled={index === 0} onClick={() => { onOrganize(current => moveFolder(current, index, index - 1)); moved(`folder:${folder.name}`, folder.name, 'up', index); }}><ArrowUp size={14} /></button>
+            <button className="icon-button" type="button" data-move={`folder:${folder.name}:down`} aria-label={`${folder.name}を下へ`} disabled={index === folders.length - 1} onClick={() => { onOrganize(current => moveFolder(current, index, index + 1)); moved(`folder:${folder.name}`, folder.name, 'down', index + 2); }}><ArrowDown size={14} /></button>
             <button className="icon-button" type="button" aria-label={`${folder.name}の名前を変更`} onClick={() => { setEditing(folder.name); setDraftName(folder.name); setError(''); }}><Pencil size={14} /></button>
             <button className="icon-button delete-button" type="button" aria-label={`分類「${folder.name}」を削除`} onClick={() => onOrganize(current => deleteFolder(current, folder.name))}><Trash2 size={14} /></button>
           </>}
@@ -100,17 +119,19 @@ export function FeedOrganizer(props: FeedOrganizerProps) {
           {group.feeds.map((feed, index) => {
             const move = (from: number, to: number) => group.unfiled ? props.onMoveUnfiled(from, to) : onOrganize(current => moveFeedInFolder(current, group.name, from, to));
             return <FeedRow key={feed.id} {...props} feed={feed}
-              order={{ label: group.name, first: index === 0, last: index === group.feeds.length - 1, up: () => move(index, index - 1), down: () => move(index, index + 1) }}
+              order={{ label: group.name, moveKey: `feed:${group.name}:${feed.id}`, first: index === 0, last: index === group.feeds.length - 1,
+                up: () => { move(index, index - 1); moved(`feed:${group.name}:${feed.id}`, feed.name, 'up', index); },
+                down: () => { move(index, index + 1); moved(`feed:${group.name}:${feed.id}`, feed.name, 'down', index + 2); } }}
               drag={{ ...dragProps({ kind: 'feed', group: group.name, index }, from => move(from, index)), dragging: drag?.kind === 'feed' && drag.group === group.name && drag.index === index }} />;
           })}
         </section>)}
     </div>
-  </>;
+  </div>;
 }
 
 type RowProps = FeedOrganizerProps & {
   feed: Feed;
-  order?: { label: string; first: boolean; last: boolean; up: () => void; down: () => void };
+  order?: { label: string; moveKey: string; first: boolean; last: boolean; up: () => void; down: () => void };
   drag?: DragHandlers & { dragging: boolean };
 };
 
@@ -132,8 +153,8 @@ function FeedRow({ feed, folders, fetchStates, showFetchStates, onTogglePriority
     </div>
     <div className="manage-feed-actions">
     {order && <>
-      <button className="icon-button" type="button" aria-label={`${feed.name}を${order.label}の中で上へ`} disabled={order.first} onClick={order.up}><ArrowUp size={14} /></button>
-      <button className="icon-button" type="button" aria-label={`${feed.name}を${order.label}の中で下へ`} disabled={order.last} onClick={order.down}><ArrowDown size={14} /></button>
+      <button className="icon-button" type="button" data-move={`${order.moveKey}:up`} aria-label={`${feed.name}を${order.label}の中で上へ`} disabled={order.first} onClick={order.up}><ArrowUp size={14} /></button>
+      <button className="icon-button" type="button" data-move={`${order.moveKey}:down`} aria-label={`${feed.name}を${order.label}の中で下へ`} disabled={order.last} onClick={order.down}><ArrowDown size={14} /></button>
     </>}
     <button type="button" className={`folder-choose${choosing ? ' active' : ''}`} aria-expanded={choosing} onClick={() => setChoosing(open => !open)}><Tags size={13} />{member.length ? member.join('・') : '未分類'}</button>
     <button type="button" className={`priority-toggle${feed.priority ? ' active' : ''}`} aria-pressed={!!feed.priority} onClick={() => onTogglePriority(feed.id)}>優先して取得</button>

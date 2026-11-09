@@ -11,6 +11,30 @@ const FOUND_SECONDS = 7 * 86400;
 const MISSING_SECONDS = 86400;
 const SAFE_HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox" };
 
+/** 配信元の一時的な失敗（5xx）。「ファビコンが無い」とは区別し、キャッシュしない。 */
+class TransientError extends Error {}
+
+/** 先頭の maxBytes までを読み、残りは読まずに止める（<head> だけが要るので、大きいページでも途中まで使う）。 */
+async function readPrefix(body: ReadableStream<Uint8Array> | null, maxBytes: number): Promise<Uint8Array> {
+  if (!body) return new Uint8Array(0);
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (size < maxBytes) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      chunks.push(chunk.value.subarray(0, maxBytes - size));
+      size += Math.min(chunk.value.byteLength, maxBytes - size);
+    }
+    if (size >= maxBytes) await reader.cancel();
+  } finally { reader.releaseLock(); }
+  const data = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength; }
+  return data;
+}
+
 // 先頭のバイトで画像の種類を決める。SVGは中にスクリプトを書けるので扱わない。
 function imageType(bytes: Uint8Array): string | null {
   const starts = (...values: number[]) => values.every((value, i) => bytes[i] === value);
@@ -35,7 +59,7 @@ async function fetchSafe(url: string, fetcher: typeof fetch, signal: AbortSignal
       try { current = new URL(location, current).href; } catch { return null; }
       continue;
     }
-    if (!response.ok) { await response.body?.cancel(); return null; }
+    if (!response.ok) { await response.body?.cancel(); if (response.status >= 500) throw new TransientError(); return null; }
     return { response, url: current };
   }
   return null;
@@ -58,13 +82,7 @@ async function fetchIcon(url: string, fetcher: typeof fetch, signal: AbortSignal
 async function iconLinks(site: string, fetcher: typeof fetch, signal: AbortSignal): Promise<string[]> {
   const fetched = await fetchSafe(`${site}/`, fetcher, signal);
   if (!fetched) return [];
-  let html: string;
-  try {
-    html = new TextDecoder().decode(await readLimitedBytes(fetched.response.body, null, MAX_HTML_BYTES));
-  } catch (error) {
-    if (error instanceof BodyTooLargeError) return [];
-    throw error;
-  }
+  const html = new TextDecoder().decode(await readPrefix(fetched.response.body, MAX_HTML_BYTES));
   const head = html.slice(0, Math.max(0, html.search(/<\/head>/i)) || html.length);
   const links: { href: string; touch: boolean }[] = [];
   for (const [tag] of head.matchAll(/<link\b[^>]*>/gi)) {
@@ -83,6 +101,7 @@ const iconResponse = (bytes: Uint8Array, type: string, cacheControl: string) => 
 /**
  * GET /api/favicon?site=https://example.com のファビコンを返す。/favicon.ico、無ければトップページのアイコン指定を使う。
  * 見つからなければ404。Cache APIには利用者に関係なくサイトごとに保存する（見つからなかったことも1日保存する）。
+ * 一時的な失敗は保存しない。Cache APIは workers.dev では効かず、そのときはブラウザーのキャッシュだけになる。
  */
 export async function handleFavicon(request: Request, options: { fetcher?: typeof fetch; cache?: FaviconCache } = {}): Promise<Response> {
   const raw = new URL(request.url).searchParams.get('site') ?? '';
@@ -106,7 +125,10 @@ export async function handleFavicon(request: Request, options: { fetcher?: typeo
   try {
     icon = await fetchIcon(`${site}/favicon.ico`, fetcher, signal);
     if (!icon) for (const href of await iconLinks(site, fetcher, signal)) if ((icon = await fetchIcon(href, fetcher, signal))) break;
-  } catch { icon = null; }
+  } catch {
+    // 時間切れ・接続できない・5xxは一時的な失敗かもしれないので、「無い」として保存しない。
+    return new Response(null, { status: 404, headers: { ...SAFE_HEADERS, 'Cache-Control': 'no-store' } });
+  }
   const store = icon ? iconResponse(icon.bytes, icon.type, `public, max-age=${FOUND_SECONDS}`) : new Response(null, { status: 404, headers: { 'Cache-Control': `public, max-age=${MISSING_SECONDS}` } });
   await options.cache?.put(key, store).catch(() => {});
   return icon ? iconResponse(icon.bytes, icon.type, `private, max-age=${FOUND_SECONDS}`) : missing();

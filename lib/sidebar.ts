@@ -8,6 +8,11 @@ export function parseCollapsedFolders(raw: string | null): string[] {
   } catch { return []; }
 }
 
+/** 分類の名前を変えたときに、閉じた状態を新しい名前へ引き継ぐ。 */
+export function renameCollapsedFolder(collapsed: string[], from: string, to: string): string[] {
+  return collapsed.map(name => name === from ? to : name);
+}
+
 export function toggleFolder(collapsed: string[], folder: string): string[] {
   return collapsed.includes(folder) ? collapsed.filter(name => name !== folder) : [...collapsed, folder];
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { COLLAPSED_FOLDERS_KEY, filterFeeds, parseCollapsedFolders, parseViewParam, resolveView, toggleFolder, viewHref } from '../lib/sidebar.ts';
+import { COLLAPSED_FOLDERS_KEY, filterFeeds, parseCollapsedFolders, renameCollapsedFolder, parseViewParam, resolveView, toggleFolder, viewHref } from '../lib/sidebar.ts';
 
 test('閉じたフォルダの保存値を読み取り、壊れた値は空にする', () => {
   assert.equal(COLLAPSED_FOLDERS_KEY, 'folio.collapsedFolders');
@@ -46,4 +46,9 @@ test('filterFeeds: フィード名かURLの一部で、大文字小文字と全�
   assert.deepEqual(filterFeeds(feeds, 'zenn.dev').map(f => f.id), ['b']);
   assert.deepEqual(filterFeeds(feeds, 'gigazine').map(f => f.id), ['c']);
   assert.deepEqual(filterFeeds(feeds, 'nothing').map(f => f.id), []);
+});
+
+test('renameCollapsedFolder: 閉じたフォルダの名前を変え、無ければそのまま', () => {
+  assert.deepEqual(renameCollapsedFolder(['A', 'B'], 'A', 'C'), ['C', 'B']);
+  assert.deepEqual(renameCollapsedFolder(['B'], 'A', 'C'), ['B']);
 });

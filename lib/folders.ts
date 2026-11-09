@@ -6,6 +6,8 @@ export type FeedGroup = { name: string; feeds: Feed[]; unfiled: boolean };
 
 /** どの分類にも入っていないフィードの表示名。分類の名前には使えない。 */
 export const UNFILED = '未分類';
+/** 記事一覧の「すべて」の絞り込みと重なるので、分類の名前には使えない。 */
+const ALL = 'すべて';
 export const MAX_FOLDERS = 100;
 export const MAX_FOLDER_NAME = 40;
 /** 保存した分類が無いときの並び順（これまでのサイドバーと同じ）。ここに無い分類は購読の順に後ろへ並べる。 */
@@ -20,7 +22,8 @@ export function resolveFolders(feeds: Feed[], folders: FeedFolder[] | undefined)
   if (folders) return folders.map(folder => ({ name: folder.name, feedIds: [...new Set(folder.feedIds)].filter(id => ids.has(id)) }));
   const byName = new Map<string, string[]>();
   for (const feed of feeds) {
-    if (!feed.category || feed.category === UNFILED) continue;
+    // 同期データの検証を通るよう、作れない名前（長すぎる・使えない名前）や上限を超える分類は作らず未分類にする。
+    if (!feed.category || nameError([], feed.category) || (!byName.has(feed.category) && byName.size >= MAX_FOLDERS)) continue;
     const list = byName.get(feed.category) ?? [];
     if (!list.includes(feed.id)) list.push(feed.id);
     byName.set(feed.category, list);
@@ -55,7 +58,7 @@ export function folderFeedIds(feeds: Feed[], folders: FeedFolder[], name: string
 function nameError(folders: FeedFolder[], name: string, except?: string): string | null {
   if (!name) return '分類の名前を入力してください。';
   if (Array.from(name).length > MAX_FOLDER_NAME) return `分類の名前は${MAX_FOLDER_NAME}文字以内にしてください。`;
-  if (name === UNFILED) return `「${UNFILED}」は分類の名前に使えません。`;
+  if (name === UNFILED || name === ALL) return `「${name}」は分類の名前に使えません。`;
   if (name !== except && folders.some(folder => folder.name === name)) return '同じ名前の分類があります。';
   return null;
 }
@@ -118,15 +121,19 @@ export function moveUnfiledFeed(feeds: Feed[], folders: FeedFolder[], from: numb
   return feeds.map(feed => ids.has(feed.id) ? moved[next++] : feed);
 }
 
-/** 新しく購読したフィードを、分類名（category）の分類の最後に入れる。その分類が無ければ最後に作る。 */
-export function addFeedsToFolders(folders: FeedFolder[], feeds: Feed[]): FeedFolder[] {
+/**
+ * 新しく購読したフィードを、分類名（category）の分類の最後に入れる。その分類が無ければ、createMissing のときだけ最後に作る。
+ * 1件の追加では分類名は記事の内容からの推測なので、利用者が消したり名前を変えたりした分類を作り直さないよう createMissing: false にする。
+ */
+export function addFeedsToFolders(folders: FeedFolder[], feeds: Feed[], options: { createMissing?: boolean } = {}): FeedFolder[] {
+  const createMissing = options.createMissing ?? true;
   let next = folders;
   for (const feed of feeds) {
     const name = feed.category?.trim();
-    if (!name || name === UNFILED || Array.from(name).length > MAX_FOLDER_NAME) continue;
+    if (!name || nameError([], name)) continue;
     const folder = next.find(item => item.name === name);
     if (folder?.feedIds.includes(feed.id)) continue;
-    if (!folder && next.length >= MAX_FOLDERS) continue;
+    if (!folder && (!createMissing || next.length >= MAX_FOLDERS)) continue;
     next = folder ? next.map(item => item === folder ? { ...item, feedIds: [...item.feedIds, feed.id] } : item) : [...next, { name, feedIds: [feed.id] }];
   }
   return next;
