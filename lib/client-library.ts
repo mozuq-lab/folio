@@ -8,6 +8,13 @@ export const WORKSPACE_BACKUP_KEY = 'folio.workspace.v2.backup';
 export const ownerBackupKey=(ownerId:string)=>`${WORKSPACE_BACKUP_KEY}.owner.${encodeURIComponent(ownerId)}`;
 export type SyncStatus = 'loading'|'synced'|'syncing'|'offline'|'local'|'conflict'|'error';
 export interface LibraryCache { document:SyncDocument;revision:number;pending:boolean;ownerId?:string; }
+/**
+ * 端末のバックログを開く持ち主。確かめた持ち主があればそれを使う。オフラインで確かめられないときだけ、
+ * 端末のcacheの持ち主で端末内の記事を表示する（送信はバックログ側が持ち主を確かめるまで行わない）。
+ */
+export function backlogOwnerId(verified:string|null,status:SyncStatus,cached:string|undefined):string|null {
+  return verified??(status==='offline'?cached??null:null);
+}
 // verifiedOwnerId はサーバーの応答で確かめた持ち主。端末のcacheにある ownerId は確かめる前の値なので使わない。
 export interface LibraryView { cache:LibraryCache;ready:boolean;status:SyncStatus;error:string;userName:string;conflict:CloudLibrary|null;verifiedOwnerId:string|null; }
 const record=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);

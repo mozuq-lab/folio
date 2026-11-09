@@ -96,6 +96,11 @@ export function useLibrary(initialReader:ReaderState) {
   const setIntelligence:Dispatch<SetStateAction<IntelligenceState>>=useCallback(update=>{
     controllerRef.current?.editIntelligence(update);
   },[]);
+  const snapshot=useCallback(()=>{
+    const controller=controllerRef.current;if(!controller)return null;
+    const {cache,verifiedOwnerId}=controller.view;
+    return {ownerId:verifiedOwnerId,reader:cache.document.reader,intelligence:cache.document.intelligence};
+  },[]);
   const syncNow=useCallback(async()=>{await controllerRef.current?.syncNow();},[]);
   const resolveConflict=useCallback(async(choice:'cloud'|'local')=>{await controllerRef.current?.resolveConflict(choice);},[]);
 
@@ -111,6 +116,10 @@ export function useLibrary(initialReader:ReaderState) {
     userName:view.userName,
     // サーバーで確かめた持ち主のID。確かめる前やログアウト時は null。バックログはこのIDで開く。
     ownerId:view.verifiedOwnerId,
+    // オフラインで確かめられないときに端末内のバックログを表示するための、cacheの持ち主。
+    cachedOwnerId:view.cache.ownerId??null,
+    // いまの同期データと確かめた持ち主を、描画を待たずに読む（移行中の持ち主の確認に使う）。
+    snapshot,
     conflict:view.conflict,
     syncNow,
     resolveConflict,
