@@ -25,3 +25,12 @@ export function parseViewParam(raw: string | null): string | null {
   if (VIEWS.has(raw)) return raw;
   return /^feed:[^\s]{1,200}$/.test(raw) ? raw : null;
 }
+
+/**
+ * 表示する画面。選んだ表示、URLの表示、For You の順に使う。
+ * 購読していないフィードは For You に戻す。ただし購読一覧を読み込むまでは、URLのフィードを捨てない。
+ */
+export function resolveView(chosen: string | null, fromUrl: string | null, feeds: { id: string }[], ready: boolean): string {
+  const requested = chosen ?? fromUrl ?? 'for-you';
+  return ready && requested.startsWith('feed:') && !feeds.some(feed => `feed:${feed.id}` === requested) ? 'for-you' : requested;
+}

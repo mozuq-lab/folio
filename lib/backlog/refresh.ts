@@ -55,3 +55,16 @@ export async function runRefresh(
   await Promise.all(Array.from({ length: Math.min(options.limit ?? REFRESH_CONCURRENCY, feedIds.length) }, worker));
   return { stopped, failed };
 }
+
+/** /api/feeds/refresh の応答を、そのフィードの結果に直す。404はまだサーバーに同期されていないフィードなので失敗にしない。 */
+export function refreshResultOf(feedId: string, status: number, body: unknown): RefreshFailure | null {
+  if (status === 404) return null;
+  if (status < 200 || status >= 300) return { feedId, kind: 'server' };
+  const error = body && typeof body === 'object' ? (body as { error?: unknown }).error : undefined;
+  return typeof error === 'string' ? { feedId, kind: error } : null;
+}
+
+/** 頼んだときの例外。1件の時間切れはそのフィードの失敗にし、接続できないときは残りを頼まずに止める。 */
+export function refreshErrorOf(feedId: string, error: unknown): RefreshFailure | 'stop' {
+  return error instanceof DOMException && error.name === 'TimeoutError' ? { feedId, kind: 'timeout' } : 'stop';
+}
