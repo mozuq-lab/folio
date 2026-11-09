@@ -82,7 +82,8 @@ export default function Home(){
  // 表示はURLの ?view= から始める（別タブで開いたフィードなど）。購読していないフィードなら For You にする。
  const urlView=useSyncExternalStore(subscribeNever,readUrlView,()=>null);
  const [chosenView,setChosenView]=useState<string|null>(null);
- const view=resolveView(chosenView,urlView,state.feeds,ready);
+ // 購読一覧が空のうち（オフラインや同期の失敗で読めていないときを含む）は、URLのフィードを捨てない。
+ const view=resolveView(chosenView,urlView,state.feeds,ready&&state.feeds.length>0);
  // 並び順は、最初に選ばれるまで表示に合わせる。表示を変える前に今の並び順を確定し、検索や話題からの移動で並び順が変わらないようにする。
  const setView=(v:string)=>{if(sortChoice===null)setSort(sort);setChosenView(v);try{window.history.replaceState(window.history.state,'',viewHref(v));}catch{/* URLを変えられなくても表示は切り替える */}};
  const [category,setCategory]=useState('すべて');
@@ -248,7 +249,7 @@ export default function Home(){
    if(openedFor.current!==ownerId){
     openedFor.current=ownerId;await syncBacklog();
     const current=stateRef.current;
-    if(!current.lastUpdated&&current.feeds.length)await withRefreshing(async()=>{await syncNow();const targets=refreshTargets(current.feeds,'all');const outcome=await refreshFeeds(targets,(done,total)=>setRefreshProgress({done,total}));setState(s=>({...s,lastUpdated:new Date().toISOString()}));if(!outcome.stopped)setRefreshNotice(refreshFailureMessage(current.feeds,targets.length,outcome.failed));});
+    if(!current.lastUpdated&&current.feeds.length)await withRefreshing(async()=>{await syncNow();const targets=refreshTargets(current.feeds,'all');const outcome=await refreshFeeds(targets,(done,total)=>setRefreshProgress({done,total}));if(outcome.stopped)return;setState(s=>({...s,lastUpdated:new Date().toISOString()}));setRefreshNotice(refreshFailureMessage(current.feeds,targets.length,outcome.failed));});
    }
    if(active){setSettled(true);setRefreshToken(t=>t+1);}
   })();
