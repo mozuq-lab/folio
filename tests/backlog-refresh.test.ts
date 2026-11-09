@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { REFRESH_CONCURRENCY, refreshFailureMessage, refreshTargets, runRefresh } from '../lib/backlog/refresh.ts';
+import { REFRESH_CONCURRENCY, refreshErrorOf, refreshFailureMessage, refreshResultOf, refreshTargets, runRefresh } from '../lib/backlog/refresh.ts';
 import type { Feed } from '../lib/types.ts';
 
 const feed = (id: string, priority?: boolean) => ({ id, name: `名前${id}`, url: `https://${id}.example/feed`, category: 'x', color: '#000', initial: 'x', ...(priority === undefined ? {} : { priority }) }) as Feed;
@@ -54,4 +54,19 @@ test('runRefresh: stopを返したら残りを頼まずに止まる', async () =
   assert.equal(result.stopped, true);
   assert.deepEqual(seen, ['a', 'b']);
   assert.deepEqual(await runRefresh([], async () => null), { stopped: false, failed: [] });
+});
+
+test('refreshResultOf: 404は未同期として成功扱い、異常な応答はserver、取得失敗は種類を返す', () => {
+  assert.equal(refreshResultOf('a', 200, { inserted: 3 }), null);
+  assert.equal(refreshResultOf('a', 404, { error: 'フィードが見つかりません。' }), null);
+  assert.deepEqual(refreshResultOf('a', 200, { inserted: 0, error: 'network' }), { feedId: 'a', kind: 'network' });
+  assert.deepEqual(refreshResultOf('a', 500, { error: 'フィードを取得できませんでした。' }), { feedId: 'a', kind: 'server' });
+  assert.deepEqual(refreshResultOf('a', 503, null), { feedId: 'a', kind: 'server' });
+  assert.equal(refreshResultOf('a', 200, null), null);
+});
+
+test('refreshErrorOf: 1件の時間切れはそのフィードの失敗、接続できないときは全体を止める', () => {
+  assert.deepEqual(refreshErrorOf('a', new DOMException('timed out', 'TimeoutError')), { feedId: 'a', kind: 'timeout' });
+  assert.equal(refreshErrorOf('a', new TypeError('Failed to fetch')), 'stop');
+  assert.equal(refreshErrorOf('a', new DOMException('aborted', 'AbortError')), 'stop');
 });

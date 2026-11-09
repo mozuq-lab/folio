@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadBacklog, saveBacklog } from '../lib/backlog/client-db.ts';
 import { acknowledgeReads, applyChanges, changesUrl, expireEntries, forOwner, parseChanges, queueRead, takePendingBatches, type BacklogState } from '../lib/backlog/client-state.ts';
-import { runRefresh, type RefreshFailure } from '../lib/backlog/refresh.ts';
+import { refreshErrorOf, refreshResultOf, runRefresh, type RefreshFailure } from '../lib/backlog/refresh.ts';
 import type { BacklogEntry } from '../lib/backlog/types.ts';
 import type { Article } from '../lib/types.ts';
 
@@ -18,7 +18,8 @@ const READ_ERROR = '既読を保存できませんでした。';
 const OWNER_ERROR = '別のアカウントでログインしています。ページを再読み込みしてください。';
 
 type View = { state: BacklogState | null; lastError: string; articles: Article[] };
-export type RefreshOutcome = { completed: boolean; failed: RefreshFailure[] };
+/** completed：すべて頼み終えて差分も受け取れた。stopped：接続できないなどで途中で止めた（失敗の件数は途中までの分）。 */
+export type RefreshOutcome = { completed: boolean; stopped: boolean; failed: RefreshFailure[] };
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const errorText = (body: unknown, fallback: string) => isRecord(body) && typeof body.error === 'string' ? body.error : fallback;
 
@@ -263,22 +264,22 @@ class BacklogSync {
     await this.loading;
     // 持ち主を確かめる前は、先に差分を1回取得して確かめる。
     if (!this.verified) await (this.syncing ?? this.sync());
-    if (!this.active() || !this.verified) return { completed: false, failed: [] };
+    if (!this.active() || !this.verified) return { completed: false, stopped: true, failed: [] };
     // 1回のリクエストで取得するのは1フィードだけ（無料プランのCPU上限のため）。数件ずつ並行して頼む。
     const { stopped, failed } = await runRefresh(feedIds, async feedId => {
       if (!this.active()) return 'stop';
       try {
         const response = await this.request(`/api/feeds/refresh?feed=${encodeURIComponent(feedId)}`, { method: 'POST' }, REFRESH_TIMEOUT_MS);
-        const body: unknown = await response.json().catch(() => null);
-        // 404はまだサーバーに同期されていないフィード。次の同期後に取得できる。
-        if (response.status === 404) return null;
-        if (!response.ok) return { feedId, kind: 'server' };
-        return isRecord(body) && typeof body.error === 'string' ? { feedId, kind: body.error } : null;
-      } catch { this.setErrors({ sync: OFFLINE_ERROR }); return 'stop'; }
+        return refreshResultOf(feedId, response.status, await response.json().catch(() => null));
+      } catch (error) {
+        const outcome = refreshErrorOf(feedId, error);
+        if (outcome === 'stop') this.setErrors({ sync: OFFLINE_ERROR });
+        return outcome;
+      }
     }, { onProgress });
-    if (stopped) return { completed: false, failed };
+    if (stopped) return { completed: false, stopped: true, failed };
     await this.sync();
-    return { completed: !!this.active() && this.syncError === '', failed };
+    return { completed: !!this.active() && this.syncError === '', stopped: false, failed };
   }
 }
 
@@ -331,7 +332,7 @@ export function useBacklog(ownerId: string | null) {
   const setRead = useCallback((ids: string[], read: boolean) => { controllerFor()?.setRead(ids, read); }, [controllerFor]);
   const sync = useCallback(async () => { await controllerFor()?.sync(); }, [controllerFor]);
   const refreshFeeds = useCallback(async (feedIds: string[], onProgress?: (done: number, total: number) => void): Promise<RefreshOutcome> =>
-    (await controllerFor()?.refreshFeeds(feedIds, onProgress)) ?? { completed: false, failed: [] }, [controllerFor]);
+    (await controllerFor()?.refreshFeeds(feedIds, onProgress)) ?? { completed: false, stopped: true, failed: [] }, [controllerFor]);
   // まとめて既読用。送れたかどうかを返す（送れなかった分も端末には残る）。
   const sendRead = useCallback(async (ids: string[], read: boolean) => (await controllerFor()?.setReadAndSend(ids, read)) ?? false, [controllerFor]);
 

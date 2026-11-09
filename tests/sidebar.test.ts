@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { COLLAPSED_FOLDERS_KEY, parseCollapsedFolders, parseViewParam, toggleFolder, viewHref } from '../lib/sidebar.ts';
+import { COLLAPSED_FOLDERS_KEY, parseCollapsedFolders, parseViewParam, resolveView, toggleFolder, viewHref } from '../lib/sidebar.ts';
 
 test('閉じたフォルダの保存値を読み取り、壊れた値は空にする', () => {
   assert.equal(COLLAPSED_FOLDERS_KEY, 'folio.collapsedFolders');
@@ -20,4 +20,15 @@ test('表示のURL：フィードは別タブで開けるURLにし、URLから�
   assert.equal(viewHref('all'), '/?view=all');
   for (const view of ['for-you', 'digest', 'stories', 'notebook', 'explore', 'all', 'saved', 'feed:opml-1a2b']) assert.equal(parseViewParam(new URL(`https://folio.example${viewHref(view)}`).searchParams.get('view') ?? 'for-you'), view);
   for (const raw of [null, '', 'unknown', 'feed:', 'feed:' + 'x'.repeat(300)]) assert.equal(parseViewParam(raw), null);
+});
+
+test('resolveView: 選んだ表示、URLの表示、For You の順。購読していないフィードは読み込み後だけ For You に戻す', () => {
+  const feeds = [{ id: 'a' }, { id: 'b' }];
+  assert.equal(resolveView(null, null, feeds, true), 'for-you');
+  assert.equal(resolveView(null, 'feed:a', feeds, true), 'feed:a');
+  assert.equal(resolveView('all', 'feed:a', feeds, true), 'all');
+  assert.equal(resolveView(null, 'feed:gone', feeds, true), 'for-you');
+  // 読み込み前は購読一覧が空でも、URLのフィードを捨てない。
+  assert.equal(resolveView(null, 'feed:a', [], false), 'feed:a');
+  assert.equal(resolveView('feed:b', null, feeds, true), 'feed:b');
 });
