@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { getCurrentUser } from '../../../lib/auth/context.ts';
 import { BodyTooLargeError, NO_STORE_HEADERS, isSameOrigin, readLimitedText } from '../../../lib/http.ts';
+import { syncFeedListIfChanged, touchUser } from '../../../lib/backlog/schedule.ts';
 import { getCloudLibrary, putCloudLibrary, LibraryConflictError, LibraryValidationError, MAX_LIBRARY_REQUEST_BYTES } from '../../../lib/cloud-library.ts';
 
 const headers=NO_STORE_HEADERS;
@@ -10,6 +11,8 @@ export async function GET():Promise<Response> {
   const user=getCurrentUser();
   if(!user) return respond({error:'ログインしてください。'},401);
   if(!env.DB) return respond({error:'クラウド同期が利用できません。しばらくしてからお試しください。',ownerId:user.id,userName:user.displayName},503);
+  // 定期取得の対象にするための記録。失敗しても応答は変えない。
+  try { await touchUser(env.DB,user.id,user.email,new Date()); } catch {}
   try { return respond({...await getCloudLibrary(env.DB,user.id),userName:user.displayName}); }
   catch { return respond({error:'クラウドのデータを読み込めませんでした。',ownerId:user.id},500); }
 }
@@ -35,6 +38,8 @@ export async function PUT(request:Request):Promise<Response> {
   if(typeof input.expectedOwnerId!=='string'||!input.expectedOwnerId) return respond({error:'同期するアカウントを確認できません。ページを再読込してください。'},400);
   try {
     const result=await putCloudLibrary(env.DB,user.id,input.document as Parameters<typeof putCloudLibrary>[2],input.baseRevision,input.expectedOwnerId);
+    // 購読一覧に差があるときだけD1へ写す。保存済みの文書は再び読まず、すでに検証済みの値を使う。失敗しても保存は成功のまま（次の保存で再試行される）。
+    try { if(result.document) await syncFeedListIfChanged(env.DB,user.id,result.document.reader.feeds); } catch {}
     return respond({...result,userName:user.displayName});
   } catch(error) {
     if(error instanceof LibraryConflictError) return respond({error:error.message,current:{...error.current,userName:user.displayName}},409);

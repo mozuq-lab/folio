@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
+import { createTestD1 } from './helpers/d1.ts';
 import { getCloudLibrary, putCloudLibrary, LibraryConflictError, validateSyncDocument, type LibraryDatabase } from '../lib/cloud-library.ts';
 import { DEFAULT_INTELLIGENCE, type SyncDocument } from '../lib/intelligence-types.ts';
 
@@ -8,32 +9,7 @@ function document(): SyncDocument {
   return { version:2, reader:{version:1,articles:[],feeds:[],saved:[],read:[],feedback:{},preferences:{interests:[],mutedTopics:[],topicWeights:{},sourceWeights:{},diversity:30},lastUpdated:null},intelligence:structuredClone(DEFAULT_INTELLIGENCE),updatedAt:'2026-11-06T00:00:00.000Z' };
 }
 function database(): LibraryDatabase & { sqlite:DatabaseSync } {
-  const sqlite = new DatabaseSync(':memory:');
-  sqlite.exec('CREATE TABLE folio_libraries (user_id TEXT PRIMARY KEY NOT NULL, document TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL)');
-  sqlite.exec('CREATE TABLE folio_library_chunks (user_id TEXT NOT NULL, operation_token TEXT NOT NULL, part INTEGER NOT NULL, content TEXT NOT NULL, PRIMARY KEY (user_id, operation_token, part))');
-  const queries=new WeakMap<object,{sql:string;values:(string|number)[]}>();
-  const prepare=(sql:string)=>{
-    const query={sql,values:[] as (string|number)[]};
-    const statement={
-      bind(...values:(string|number)[]) { query.values=values;return this; },
-      async first<T>() { return (sqlite.prepare(sql).get(...query.values)??null) as T|null; },
-      async all<T>() { return {results:sqlite.prepare(sql).all(...query.values) as T[]}; },
-    };
-    queries.set(statement,query);return statement;
-  };
-  return {sqlite,prepare,async batch(statements:object[]) {
-    sqlite.exec('BEGIN');
-    try {
-      const result=statements.map(statement=>{
-        const query=queries.get(statement)!;
-        for(const value of query.values) if(typeof value==='string'&&new TextEncoder().encode(value).byteLength>2000000) throw new Error('D1 binding exceeds 2MB');
-        const results=sqlite.prepare(query.sql).all(...query.values);
-        for(const row of results) if(Object.values(row).reduce<number>((sum,value)=>sum+(typeof value==='string'?new TextEncoder().encode(value).byteLength:8),0)>2000000) throw new Error('D1 row exceeds 2MB');
-        return {results,success:true,meta:{}};
-      });
-      sqlite.exec('COMMIT');return result;
-    } catch(error) { sqlite.exec('ROLLBACK');throw error; }
-  }} as unknown as LibraryDatabase & {sqlite:DatabaseSync};
+  return createTestD1() as unknown as LibraryDatabase & { sqlite:DatabaseSync };
 }
 test('初回は空、保存後はuser単位で復元しSQLを含むIDも値として扱う',async()=>{
   const db=database();
@@ -60,6 +36,11 @@ test('不正なschema、prototype用key、NaN、不正な拡張フィールド�
   for(const bad of [null,{...document(),version:1},{...document(),extra:'bad'},{...document(),reader:{...document().reader,articles:[{id:'partial'}]}},{...document(),intelligence:{...document().intelligence,exploration:NaN}},{...document(),intelligence:{...document().intelligence,notes:[{id:'x',articleId:'a',quote:'q',body:'b',createdAt:'now',updatedAt:3}]}}]) assert.equal(validateSyncDocument(bad),false);
   const unsafe=JSON.parse(JSON.stringify(document()));unsafe.reader.preferences.topicWeights=JSON.parse('{"__proto__":1}');assert.equal(validateSyncDocument(unsafe),false);
   const wrongContent=JSON.parse(JSON.stringify(document()));wrongContent.reader.articles=[{id:'a',title:'a',description:'',url:'https://example.com',sourceId:'s',sourceName:'s',publishedAt:'now',tags:[],readingMinutes:1,content:{bad:true}}];assert.equal(validateSyncDocument(wrongContent),false);
+});
+test('priority付きのfeedは通り、priorityの無いfeedも通る',()=>{
+  const base={id:'f',name:'n',url:'https://example.com/f.xml',website:'https://example.com',category:'c',color:'#000',initial:'F'};
+  for(const feeds of [[base],[{...base,priority:true}],[{...base,priority:false}]]){const d=document();d.reader.feeds=feeds;assert.equal(validateSyncDocument(d),true);}
+  const bad=document();bad.reader.feeds=[{...base,priority:'yes'}] as never;assert.equal(validateSyncDocument(bad),false);
 });
 test('4MBを超えるdocumentと不正revisionは保存しない',async()=>{
   const db=database();const oversized=document();oversized.intelligence.instructions='あ'.repeat(1500000);

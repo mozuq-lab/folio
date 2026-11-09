@@ -4,7 +4,7 @@ import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { ArrowUpRight, Bookmark, BookOpen, Check, Clock3, Compass, FileText, Layers3, LoaderCircle, MessageSquare, Search, Sparkles, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react';
 import type { Article, ReaderState } from '../../lib/types';
 import type { AIRequest, AIResult, ArticleNote, DigestResult, IntelligenceState, StoryReport } from '../../lib/intelligence-types';
-import { buildReadingPlan, clusterStories, searchLibrary, selectExploration } from '../../lib/discovery';
+import { buildReadingPlan, clusterStories, recentArticles, searchLibrary, selectExploration } from '../../lib/discovery';
 import './intelligence-panels.css';
 
 export interface FeaturePanelProps {
@@ -53,7 +53,7 @@ export function DigestView(props: FeaturePanelProps) {
   const [error, setError] = useState('');
   const budget = intelligence.digestMinutes || 5;
   const plan = useMemo(() => buildReadingPlan(reader.articles, budget, reader.read), [reader.articles, reader.read, budget]);
-  const unread = reader.articles.filter(article => !reader.read.includes(article.id) && !article.isSample).slice(0, 30);
+  const unread = useMemo(() => { const read = new Set(reader.read); return reader.articles.filter(article => !read.has(article.id) && !article.isSample).slice(0, 30); }, [reader.articles, reader.read]);
   async function generate() {
     if (!aiAvailable || aiBusy || pending || !unread.length) return;
     setPending(true); setError('');
@@ -90,14 +90,18 @@ export function StoriesView(props: FeaturePanelProps) {
   const [includeSingles, setIncludeSingles] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const clusters = useMemo(() => clusterStories(reader.articles, reader.read), [reader.articles, reader.read]);
+  // バックログを含めると数万件になるので、ニュースのまとまりは直近7日の記事だけで作る。
+  // 記事の配列を既読の変化と別に保つと、既読にしたときも同じニュースの索引を作り直さずに済む。
+  const recent = useMemo(() => recentArticles(reader.articles, new Date()), [reader.articles]);
+  const clusters = useMemo(() => clusterStories(recent, reader.read), [recent, reader.read]);
+  const readIds = useMemo(() => new Set(reader.read), [reader.read]);
   const shown = clusters.filter(cluster => includeSingles || cluster.articles.length > 1);
   async function compare(id: string, articles: Article[]) {
     if (!aiAvailable || aiBusy || pending) return;
     setPending(id); setError('');
     try {
       const selected = articles.slice(0, 30);
-      const result = await requestAI({ action: 'compare', articles: selected, readIds: reader.read.filter(id => selected.some(article => article.id === id)) });
+      const result = await requestAI({ action: 'compare', articles: selected, readIds: selected.filter(article => readIds.has(article.id)).map(article => article.id) });
       if (result.kind !== 'compare') throw new Error('ニュース比較の応答を確認できませんでした。');
       setIntelligence(current => ({ ...current, storyReports: { ...current.storyReports, [id]: result.report } }));
     } catch (error) { setError(errorMessage(error)); } finally { setPending(null); }
@@ -108,7 +112,7 @@ export function StoriesView(props: FeaturePanelProps) {
     {shown.map(cluster => <article className="fi-card fi-story" key={cluster.id}><div className="fi-heading"><span className="fi-badge"><Layers3 size={14} />{cluster.articles.length}記事 · {new Set(cluster.articles.map(article => article.sourceId)).size}媒体</span><span className="fi-meta">既読 {cluster.readArticles.length} / 未読 {cluster.unreadArticles.length}</span></div>
       <h2>{cluster.title}</h2>
       {cluster.newCoverage.length > 0 && <div className="fi-coverage"><h3>新着の報道</h3><p className="fi-help">未読記事の見出し・概要の抜粋です。新しい事実の判定ではありません。</p><ul>{cluster.newCoverage.map((text, i) => <li key={i}>{text}</li>)}</ul></div>}
-      <div className="fi-story-sources">{cluster.articles.map(article => <div key={article.id} className="fi-story-source"><span className={`fi-read-state ${reader.read.includes(article.id) ? 'is-read' : ''}`}>{reader.read.includes(article.id) ? <Check size={13} /> : <span className="fi-unread-dot" />}{reader.read.includes(article.id) ? '既読' : '未読'}</span><SourceButton article={article} onOpen={onOpen} /></div>)}</div>
+      <div className="fi-story-sources">{cluster.articles.map(article => <div key={article.id} className="fi-story-source"><span className={`fi-read-state ${readIds.has(article.id) ? 'is-read' : ''}`}>{readIds.has(article.id) ? <Check size={13} /> : <span className="fi-unread-dot" />}{readIds.has(article.id) ? '既読' : '未読'}</span><SourceButton article={article} onOpen={onOpen} /></div>)}</div>
       {aiAvailable && <button className="fi-button" type="button" disabled={aiBusy || pending !== null} onClick={() => compare(cluster.id, cluster.articles)}>{pending === cluster.id ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}{pending === cluster.id ? '報道を比較中…' : 'AIで報道を比較'}</button>}
       {intelligence.storyReports[cluster.id] && <ReportContent report={intelligence.storyReports[cluster.id]} articles={cluster.articles} onOpen={onOpen} />}
     </article>)}
@@ -132,7 +136,7 @@ export function NotebookView(props: FeaturePanelProps) {
   const [question, setQuestion] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  const library = useMemo(() => reader.articles.filter(article => reader.saved.includes(article.id) || intelligence.notes.some(note => note.articleId === article.id)), [reader.articles, reader.saved, intelligence.notes]);
+  const library = useMemo(() => { const kept = new Set([...reader.saved, ...intelligence.notes.map(note => note.articleId)]); return reader.articles.filter(article => kept.has(article.id)); }, [reader.articles, reader.saved, intelligence.notes]);
   const found = useMemo(() => query.trim() ? searchLibrary(library, intelligence.notes, query, 200) : library, [library, intelligence.notes, query]);
   const foundIds = new Set(found.map(article => article.id));
   const saved = found.filter(article => reader.saved.includes(article.id));

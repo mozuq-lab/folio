@@ -31,7 +31,7 @@ export function rankArticles(
   const diversity = clamp(finite(preferences.diversity), 0, 100) / 100;
   const candidates = articles
     .filter((article) => feedback[article.id] !== 'dislike' && !article.tags.some((tag) => muted.has(tag)))
-    .map((article) => {
+    .map((article, order) => {
       const tags = [...new Set(article.tags)];
       const matches = tags.filter((tag) => interests.has(tag));
       const topicWeight = tags.reduce((sum, tag) => sum + clamp(finite(preferences.topicWeights[tag]), -6, 6), 0);
@@ -58,27 +58,53 @@ export function rankArticles(
               : ageHours < 24
                 ? '新しく届いた、発見につながる記事'
                 : 'いつもと少し違う視点を届けます';
-      return { article, tags, value: clamp(value, 0, 99), reason };
+      return { article, tags, value: clamp(value, 0, 99), reason, published, order };
     });
+  type Candidate = (typeof candidates)[number];
 
   const sourceCounts = new Map<string, number>();
   const topicCounts = new Map<string, number>();
   const result: RankedArticle[] = [];
+  const adjustedScore = (candidate: Candidate) => {
+    const sourcePenalty = Math.min(sourceCounts.get(candidate.article.sourceId) ?? 0, 3) * 12;
+    const topicPenalty = candidate.tags.length
+      ? candidate.tags.reduce((sum, tag) => sum + Math.min(topicCounts.get(tag) ?? 0, 4), 0) / candidate.tags.length * 3
+      : 0;
+    return candidate.value - diversity * (sourcePenalty + topicPenalty);
+  };
 
   // Greedy selection reduces repetition while preserving relevance and stable ties.
-  while (candidates.length) {
-    const adjustedScore = (candidate: (typeof candidates)[number]) => {
-      const sourcePenalty = Math.min(sourceCounts.get(candidate.article.sourceId) ?? 0, 3) * 12;
-      const topicPenalty = candidate.tags.length
-        ? candidate.tags.reduce((sum, tag) => sum + Math.min(topicCounts.get(tag) ?? 0, 4), 0) / candidate.tags.length * 3
-        : 0;
-      return candidate.value - diversity * (sourcePenalty + topicPenalty);
-    };
-    candidates.sort((a, b) => adjustedScore(b) - adjustedScore(a)
-      || timestamp(b.article.publishedAt) - timestamp(a.article.publishedAt)
-      || compareIds(a.article, b.article));
-    const selected = candidates.shift()!;
-    result.push({ ...selected.article, score: Math.round(clamp(adjustedScore(selected), 0, 99)), reason: selected.reason });
+  // 選ぶたびに全件を並べ直すと件数の2乗になる。減点は選ぶほど増える一方なので、各記事を前回の点数で
+  // 優先度付きキューに置き、先頭を取り出したときに計算し直す（下がっていれば置き直す）。
+  // 選ばれる順は「毎回全件を点数・新しさ・IDの順に並べて先頭を取る」場合と同じ（IDとURLまで同じ記事どうしは入力順）。
+  const heap = candidates.map((candidate) => ({ candidate, score: adjustedScore(candidate) }));
+  type Entry = (typeof heap)[number];
+  const before = (a: Entry, b: Entry): boolean => {
+    if (a.score !== b.score) return a.score > b.score;
+    if (a.candidate.published !== b.candidate.published) return a.candidate.published > b.candidate.published;
+    const byId = compareIds(a.candidate.article, b.candidate.article);
+    return byId ? byId < 0 : a.candidate.order < b.candidate.order;
+  };
+  const siftDown = (index: number) => {
+    for (;;) {
+      const left = index * 2 + 1, right = left + 1;
+      let best = index;
+      if (left < heap.length && before(heap[left], heap[best])) best = left;
+      if (right < heap.length && before(heap[right], heap[best])) best = right;
+      if (best === index) return;
+      [heap[index], heap[best]] = [heap[best], heap[index]];
+      index = best;
+    }
+  };
+  for (let i = (heap.length >> 1) - 1; i >= 0; i--) siftDown(i);
+  while (heap.length) {
+    const top = heap[0];
+    const score = adjustedScore(top.candidate);
+    if (score < top.score) { top.score = score; siftDown(0); continue; }
+    const last = heap.pop()!;
+    if (heap.length) { heap[0] = last; siftDown(0); }
+    const selected = top.candidate;
+    result.push({ ...selected.article, score: Math.round(clamp(score, 0, 99)), reason: selected.reason });
     sourceCounts.set(selected.article.sourceId, (sourceCounts.get(selected.article.sourceId) ?? 0) + 1);
     selected.tags.forEach((tag) => topicCounts.set(tag, (topicCounts.get(tag) ?? 0) + 1));
   }

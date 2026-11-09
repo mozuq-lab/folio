@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchFeed, isSafeFeedUrl, parseFeed } from '../lib/feeds.ts';
+import { FeedError, MAX_ARTICLES, feedErrorKind, fetchFeed, fetchFeedConditional, isSafeFeedUrl, parseFeed } from '../lib/feeds.ts';
 import { GET as routeGET } from '../app/api/feeds/route.ts';
 import { runWithUser } from '../lib/auth/context.ts';
 
@@ -85,10 +85,11 @@ test('linkなしの記事では絶対URLのpermalink GUIDだけを採用する',
   assert.equal(articles[0].url, 'https://example.com/article');
 });
 
-test('記事が60件を超えるfeedと重複記事を制限する', () => {
-  const items = Array.from({ length: 65 }, (_, i) => `<item><title>記事${i}</title><link>https://example.com/${i}</link></item>`).join('');
+test('記事がMAX_ARTICLES（200件）を超えるfeedと重複記事を制限する', () => {
+  assert.equal(MAX_ARTICLES, 200);
+  const items = Array.from({ length: 205 }, (_, i) => `<item><title>記事${i}</title><link>https://example.com/${i}</link></item>`).join('');
   const { articles } = parseFeed(`<rss><channel><title>通信</title>${items}</channel></rss>`, 'https://example.com/feed');
-  assert.equal(articles.length, 60);
+  assert.equal(articles.length, 200);
   const duplicate = '<item><title>同じ記事</title><link>https://example.com/one</link></item>';
   assert.equal(parseFeed(`<rss><channel><title>通信</title>${duplicate}${duplicate}</channel></rss>`, 'https://example.com/feed').articles.length, 1);
 });
@@ -203,4 +204,62 @@ test('APIは配信元のHTTP失敗を扱えるJSONエラーに変換する', asy
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('条件付き取得はetagとlastModifiedを要求ヘッダーに載せる', async () => {
+  let headers: Headers | undefined;
+  const fetcher = async (_url: string, init?: RequestInit) => {
+    headers = new Headers(init?.headers);
+    return new Response(rss, { headers: { 'content-type': 'application/xml', ETag: '"v2"', 'Last-Modified': 'Thu, 05 Nov 2026 10:00:00 GMT' } });
+  };
+  const result = await fetchFeedConditional('https://example.com/feed', { etag: '"v1"', lastModified: 'Wed, 04 Nov 2026 10:00:00 GMT', fetcher: fetcher as typeof fetch });
+  assert.equal(headers?.get('If-None-Match'), '"v1"');
+  assert.equal(headers?.get('If-Modified-Since'), 'Wed, 04 Nov 2026 10:00:00 GMT');
+  assert.ok(result.status === 'ok');
+  assert.equal(result.etag, '"v2"');
+  assert.equal(result.lastModified, 'Thu, 05 Nov 2026 10:00:00 GMT');
+  assert.equal(result.feed.articles.length, 1);
+});
+
+test('条件を渡さないときは条件付きヘッダーを付けず、応答に無い値はnullにする', async () => {
+  let headers: Headers | undefined;
+  const fetcher = async (_url: string, init?: RequestInit) => { headers = new Headers(init?.headers); return new Response(rss); };
+  const result = await fetchFeedConditional('https://example.com/feed', { fetcher: fetcher as typeof fetch });
+  assert.equal(headers?.has('If-None-Match'), false);
+  assert.equal(headers?.has('If-Modified-Since'), false);
+  assert.ok(result.status === 'ok');
+  assert.equal(result.etag, null);
+  assert.equal(result.lastModified, null);
+});
+
+test('304はnot-modifiedを返し、本文を読まずに取り消す', async () => {
+  let cancelled = false;
+  // The Response constructor rejects a body on 304, so use a minimal stand-in.
+  const body = new ReadableStream({ cancel() { cancelled = true; } });
+  const fetcher = async () => ({ status: 304, ok: false, headers: new Headers(), body });
+  const result = await fetchFeedConditional('https://example.com/feed', { etag: '"v1"', fetcher: fetcher as unknown as typeof fetch });
+  assert.deepEqual(result, { status: 'not-modified' });
+  assert.equal(cancelled, true);
+});
+
+test('条件付き取得でも危険なリダイレクト先は拒否する', async () => {
+  const fetcher = async () => new Response(null, { status: 302, headers: { location: 'https://127.0.0.1/feed' } });
+  await assert.rejects(fetchFeedConditional('https://example.com/feed', { fetcher: fetcher as typeof fetch }), /安全|公開|URL/);
+});
+
+test('feedErrorKindは失敗を種類に分ける', async () => {
+  assert.equal(feedErrorKind(new FeedError('x', 504)), 'timeout');
+  assert.equal(feedErrorKind(new FeedError('x', 422)), 'format');
+  assert.equal(feedErrorKind(new FeedError('x', 413)), 'format');
+  assert.equal(feedErrorKind(new Error('x')), 'format');
+  assert.equal(feedErrorKind('x'), 'format');
+  const networkFetcher = async () => { throw new TypeError('boom'); };
+  const network = await fetchFeedConditional('https://example.com/feed', { fetcher: networkFetcher as typeof fetch }).catch((error: unknown) => error);
+  assert.equal((network as FeedError).status, 502);
+  assert.equal(feedErrorKind(network), 'network');
+  const httpFetcher = async () => new Response('secret', { status: 500 });
+  const http = await fetchFeedConditional('https://example.com/feed', { fetcher: httpFetcher as typeof fetch }).catch((error: unknown) => error);
+  assert.equal((http as FeedError).status, 502);
+  assert.equal(feedErrorKind(http), 'http');
+  assert.doesNotMatch((http as FeedError).message, /secret/);
 });
