@@ -106,3 +106,19 @@ test('トップページが256KBを超えても、先頭の <head> からアイ�
   });
   assert.equal((await handleFavicon(req('https://example.com'), { fetcher })).status, 200);
 });
+
+test('/favicon.ico が5xxでも、トップページのアイコン指定を探す（見つからなければキャッシュしない）', async () => {
+  const cache = memoryCache();
+  const { fetcher } = fetcherOf({
+    'https://example.com/favicon.ico': () => new Response('busy', { status: 503 }),
+    'https://example.com/': () => new Response('<link rel="icon" href="/i.png">', { headers: { 'content-type': 'text/html' } }),
+    'https://example.com/i.png': () => new Response(PNG, { headers: { 'content-type': 'image/png' } }),
+  });
+  assert.equal((await handleFavicon(req('https://example.com'), { fetcher, cache })).status, 200);
+  const empty = fetcherOf({ 'https://example.com/favicon.ico': () => new Response('busy', { status: 503 }), 'https://example.com/': () => new Response('<html></html>', { headers: { 'content-type': 'text/html' } }) });
+  const other = memoryCache();
+  const missing = await handleFavicon(req('https://example.com'), { fetcher: empty.fetcher, cache: other });
+  assert.equal(missing.status, 404);
+  assert.equal(missing.headers.get('cache-control'), 'no-store');
+  assert.equal(other.store.size, 0);
+});
