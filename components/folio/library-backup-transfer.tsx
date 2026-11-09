@@ -56,7 +56,7 @@ export function LibraryBackupTransfer({ onImport, disabled = false }: {
   return <section className="opml-section feed-transfer" aria-busy={reading}>
     <div className="modal-section-title"><h3>Folioのバックアップを読み込む</h3><span>JSON</span></div>
     <p>Folioから書き出したバックアップで、別のドメインにもライブラリを移せます。</p>
-    <p>読み込むと、現在の購読・保存・好み・ノート・AIデータと、保存やメモをした記事とその既読を、バックアップの内容で置き換えます。90日分の記事と、保存・メモ以外の記事の既読はバックアップに含まれません。</p>
+    <p>読み込むと、現在の購読・保存・好み・ノート・AIデータと、保存・メモ・AI回答で参照している記事とその既読を、バックアップの内容で置き換えます。それ以外の記事（90日分のバックログ）とその既読はバックアップに含まれません。</p>
     <p>以前の形式のバックアップに含まれる記事と既読は、記事の一覧に取り込みます。</p>
     <div className="opml-actions">
       <button type="button" className="secondary-button" disabled={disabled} onClick={() => input.current?.click()}><FileUp size={15}/>バックアップを選ぶ</button>
