@@ -92,15 +92,32 @@ export function parseOpmlDetailed(xml:string):OpmlImport {
 function escapeXml(value:string):string {
   return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[char]!));
 }
-export function exportOpml(feeds:Feed[]):string {
+/** folders を渡すと、その順に分類ごとに書き出す（複数の分類に入ったフィードは各分類に書く）。どこにも無いフィードは「未分類」。 */
+export function exportOpml(feeds:Feed[],folders?:{name:string;feedIds:string[]}[]):string {
   if(feeds.length>MAX_FEEDS) throw new Error('一度に書き出せるフィードは500件までです。');
-  const categories=new Map<string,Feed[]>();const seen=new Set<string>();
-  for(const feed of feeds) {
-    const url=normalize(feed.url);
-    if(seen.has(url)) continue;
-    seen.add(url);
+  const groups:[string,Feed[]][]=[];
+  if(folders) {
+    const byId=new Map(feeds.map(feed=>[feed.id,feed] as const));const filed=new Set<string>();
+    for(const folder of folders) {
+      const members=folder.feedIds.map(id=>byId.get(id)).filter((feed):feed is Feed=>!!feed);
+      members.forEach(feed=>filed.add(feed.id));
+      groups.push([folder.name,members]);
+    }
+    groups.push(['未分類',feeds.filter(feed=>!filed.has(feed.id))]);
+  } else for(const feed of feeds) {
     const category=feed.category||'未分類';
-    const entries=categories.get(category)||[];entries.push({...feed,url});categories.set(category,entries);
+    const group=groups.find(([name])=>name===category);
+    if(group) group[1].push(feed); else groups.push([category,[feed]]);
+  }
+  const categories=new Map<string,Feed[]>();
+  for(const [category,members] of groups) {
+    const seen=new Set<string>();const entries:Feed[]=[];
+    for(const feed of members) {
+      const url=normalize(feed.url);
+      if(seen.has(url)) continue;
+      seen.add(url);entries.push({...feed,url});
+    }
+    if(entries.length) categories.set(category,[...(categories.get(category)??[]),...entries]);
   }
   const body=[...categories].map(([category,entries])=>`    <outline text="${escapeXml(category)}">\n${entries.map(feed=>`      <outline type="rss" text="${escapeXml(feed.name)}" title="${escapeXml(feed.name)}" xmlUrl="${escapeXml(feed.url)}" htmlUrl="${escapeXml(safeUrl(feed.website)?normalize(feed.website):new URL(feed.url).origin)}"/>`).join('\n')}\n    </outline>`).join('\n');
   const xml=`<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0">\n  <head><title>Folio フィード</title></head>\n  <body>\n${body}\n  </body>\n</opml>\n`;
