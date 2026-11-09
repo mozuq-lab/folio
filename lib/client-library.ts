@@ -8,7 +8,8 @@ export const WORKSPACE_BACKUP_KEY = 'folio.workspace.v2.backup';
 export const ownerBackupKey=(ownerId:string)=>`${WORKSPACE_BACKUP_KEY}.owner.${encodeURIComponent(ownerId)}`;
 export type SyncStatus = 'loading'|'synced'|'syncing'|'offline'|'local'|'conflict'|'error';
 export interface LibraryCache { document:SyncDocument;revision:number;pending:boolean;ownerId?:string; }
-export interface LibraryView { cache:LibraryCache;ready:boolean;status:SyncStatus;error:string;userName:string;conflict:CloudLibrary|null; }
+// verifiedOwnerId はサーバーの応答で確かめた持ち主。端末のcacheにある ownerId は確かめる前の値なので使わない。
+export interface LibraryView { cache:LibraryCache;ready:boolean;status:SyncStatus;error:string;userName:string;conflict:CloudLibrary|null;verifiedOwnerId:string|null; }
 const record=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const revision=(value:unknown):value is number=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0;
 const owner=(value:unknown):value is string=>typeof value==='string'&&value.length>0;
@@ -59,18 +60,19 @@ export class LibrarySyncController {
   private inFlight:Promise<void>|null=null;
   private hydrating:Promise<void>|null=null;
   private disposed=false;
+  private verifiedOwner:string|null=null;
   constructor(cache:LibraryCache,options:SyncOptions={}) {
     this.options=options;this.cache=cache;
     this.fallbackReader=options.fallbackReader??emptyReader();
     // Cached private content stays hidden until GET establishes the owner, or
     // a failed network request explicitly allows offline viewing on this device.
-    this.view={cache:freshCache(this.fallbackReader),ready:false,status:'loading',error:'',userName:'',conflict:null};
+    this.view={cache:freshCache(this.fallbackReader),ready:false,status:'loading',error:'',userName:'',conflict:null,verifiedOwnerId:null};
   }
   dispose():void { this.disposed=true; }
   private update(patch:Partial<LibraryView>):void {
     if(this.disposed)return;
     if(patch.cache) {this.cache=patch.cache;this.options.persist?.(patch.cache);}
-    this.view={...this.view,...patch};this.options.onChange?.(this.view);
+    this.view={...this.view,...patch,verifiedOwnerId:this.verifiedOwner};this.options.onChange?.(this.view);
   }
   private request(init:RequestInit={}):Promise<Response> {
     return (this.options.fetcher??fetch)('/api/library',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(15000),...init});
@@ -85,9 +87,11 @@ export class LibrarySyncController {
       const restored=this.restoreCache(ownerId);
       if(restored?.ownerId===ownerId)this.cache=restored;
     }
+    this.verifiedOwner=ownerId;
     this.cache={...this.cache,ownerId};return this.cache;
   }
   private withoutVerifiedOwner():LibraryCache {
+    this.verifiedOwner=null;
     if(this.cache.ownerId) {
       this.archiveCache();
       this.cache=freshCache(this.fallbackReader);this.generation++;

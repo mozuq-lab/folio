@@ -117,3 +117,16 @@ test('aiなしのcacheもai付きのcacheも復元できる',()=>{
   const restored=decodeCache(JSON.stringify(cache),reader());
   assert.equal(restored.storageWarning,false);assert.deepEqual(restored.cache.document.intelligence.ai,cache.document.intelligence.ai);
 });
+test('verifiedOwnerIdはサーバーが確かめた持ち主だけを示し、端末のcacheの持ち主は使わない',async()=>{
+  const cache=local();cache.ownerId='alice';
+  const offline=new LibrarySyncController(cache,{fallbackReader:reader(),fetcher:async()=>{throw new TypeError('offline');}});
+  assert.equal(offline.view.verifiedOwnerId,null);await offline.hydrate();assert.equal(offline.view.cache.ownerId,'alice');assert.equal(offline.view.verifiedOwnerId,null);
+  let mode:'ok'|'offline'|'signedOut'='ok';
+  const controller=new LibrarySyncController(cache,{fallbackReader:reader(),fetcher:async()=>{if(mode==='offline')throw new TypeError('offline');return mode==='ok'?json(cloud(cache,1)):json({error:'ログインしてください'},401);}});
+  await controller.hydrate();assert.equal(controller.view.verifiedOwnerId,'alice');
+  // 確かめた後に通信が切れても、同じ持ち主のまま使える。
+  mode='offline';await controller.hydrate();assert.equal(controller.view.status,'offline');assert.equal(controller.view.verifiedOwnerId,'alice');
+  mode='signedOut';await controller.hydrate();assert.equal(controller.view.verifiedOwnerId,null);
+  const unavailable=new LibrarySyncController(local(),{fallbackReader:reader(),fetcher:async()=>json({error:'未接続です',ownerId:'carol'},503)});
+  await unavailable.hydrate();assert.equal(unavailable.view.verifiedOwnerId,'carol');
+});

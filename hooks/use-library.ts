@@ -8,7 +8,7 @@ import type { ReaderState } from '../lib/types.ts';
 
 export function useLibrary(initialReader:ReaderState) {
   const [initialCache]=useState(()=>decodeCache(null,initialReader).cache);
-  const [view,setView]=useState<LibraryView>({cache:initialCache,ready:false,status:'loading',error:'',userName:'',conflict:null});
+  const [view,setView]=useState<LibraryView>({cache:initialCache,ready:false,status:'loading',error:'',userName:'',conflict:null,verifiedOwnerId:null});
   const [storageWarning,setStorageWarning]=useState(false);
   // The controller owns the latest reader/intelligence pair, including updates made
   // between React renders and while a network request is still running.
@@ -109,6 +109,8 @@ export function useLibrary(initialReader:ReaderState) {
     syncError:view.error,
     storageWarning,
     userName:view.userName,
+    // サーバーで確かめた持ち主のID。確かめる前やログアウト時は null。バックログはこのIDで開く。
+    ownerId:view.verifiedOwnerId,
     conflict:view.conflict,
     syncNow,
     resolveConflict,

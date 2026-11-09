@@ -17,9 +17,27 @@ const READ_ERROR = '既読を保存できませんでした。';
 const REFRESH_ERROR = '取得に失敗しました';
 const OWNER_ERROR = '別のアカウントでログインしています。ページを再読み込みしてください。';
 
-type View = { state: BacklogState | null; lastError: string };
+type View = { state: BacklogState | null; lastError: string; articles: Article[] };
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const errorText = (body: unknown, fallback: string) => isRecord(body) && typeof body.error === 'string' ? body.error : fallback;
+
+const EMPTY_ARTICLES: Article[] = [];
+// 記事の sourceId は配信元から作ったIDなので、購読一覧のフィードID（feedId）にそろえる。
+const viewArticle = (entry: BacklogEntry): Article => (entry.article.sourceId === entry.feedId ? entry.article : { ...entry.article, sourceId: entry.feedId }) as Article;
+function sortedArticles(entries: Map<string, BacklogEntry>): Article[] {
+  const keyed = Array.from(entries.values(), entry => ({ article: viewArticle(entry), time: Date.parse(entry.article.publishedAt) || 0 }));
+  keyed.sort((a, b) => b.time - a.time);
+  return keyed.map(item => item.article);
+}
+/** 記事の顔ぶれが同じか。既読だけが変わったときは並べ直さず、前の配列をそのまま使う（数万件で既読のたびに並べ直さない）。 */
+function sameArticles(previous: Map<string, BacklogEntry>, next: Map<string, BacklogEntry>): boolean {
+  if (previous.size !== next.size) return false;
+  for (const [id, entry] of next) {
+    const before = previous.get(id);
+    if (!before || before.article !== entry.article || before.feedId !== entry.feedId) return false;
+  }
+  return true;
+}
 
 /**
  * 1人の持ち主の端末側バックログを、Reactの描画とは別に持つ。持ち主が変わったら作り直す。
@@ -47,6 +65,7 @@ class BacklogSync {
   // 取得中の差分ページより後に送信できた既読操作。そのページの応答では端末の値を残す。
   private getInFlight = false;
   private settled = new Map<string, boolean>();
+  private sorted: { entries: Map<string, BacklogEntry> | null; articles: Article[] } = { entries: null, articles: EMPTY_ARTICLES };
 
   constructor(ownerId: string, onChange: (view: View) => void) {
     this.ownerId = ownerId;
@@ -77,7 +96,17 @@ class BacklogSync {
   }
 
   private emit(): void {
-    if (!this.disposed) this.onChange({ state: this.state, lastError: this.stopError || this.readError || this.syncError });
+    if (!this.disposed) this.onChange({ state: this.state, lastError: this.stopError || this.readError || this.syncError, articles: this.articlesOf(this.state) });
+  }
+
+  private articlesOf(state: BacklogState | null): Article[] {
+    if (!state) return EMPTY_ARTICLES;
+    const { entries } = state;
+    const cached = this.sorted;
+    if (cached.entries === entries) return cached.articles;
+    const articles = cached.entries && sameArticles(cached.entries, entries) ? cached.articles : sortedArticles(entries);
+    this.sorted = { entries, articles };
+    return articles;
   }
 
   private commit(next: BacklogState): void {
@@ -115,6 +144,15 @@ class BacklogSync {
     // 先に端末へ保存し（flushが保存の完了を待つ）、それから送る。止まった後も端末には残す。
     this.commit(queueRead(this.state, ids, read));
     void this.flush();
+  }
+
+  /** 既読を記録して送り、指定の記事がすべてサーバーに届いたかを返す。届かなかった分は端末に残り、次の同期で送る。 */
+  async setReadAndSend(ids: string[], read: boolean): Promise<boolean> {
+    if (this.disposed || !ids.length) return !ids.length;
+    this.setRead(ids, read);
+    await this.flush();
+    const state = this.active();
+    return !!state && this.verified && ids.every(id => state.pendingReads.get(id) !== read);
   }
 
   flush(): Promise<void> {
@@ -238,16 +276,10 @@ class BacklogSync {
   }
 }
 
-const EMPTY_ARTICLES: Article[] = [];
-function sortedArticles(entries: Map<string, BacklogEntry>): Article[] {
-  const keyed = Array.from(entries.values(), entry => ({ article: entry.article as Article, time: Date.parse(entry.article.publishedAt) || 0 }));
-  keyed.sort((a, b) => b.time - a.time);
-  return keyed.map(item => item.article);
-}
 
 /** サーバーに蓄積された記事の、この端末での写し。ownerId は同期で確かめた持ち主のID。 */
 export function useBacklog(ownerId: string | null) {
-  const [view, setView] = useState<View>({ state: null, lastError: '' });
+  const [view, setView] = useState<View>({ state: null, lastError: '', articles: EMPTY_ARTICLES });
   const controllerRef = useRef<BacklogSync | null>(null);
 
   useEffect(() => {
@@ -277,7 +309,7 @@ export function useBacklog(ownerId: string | null) {
   const state = ownerId && view.state?.ownerId === ownerId ? view.state : null;
   const entries = state?.entries;
   const pendingReads = state?.pendingReads;
-  const articles = useMemo(() => entries ? sortedArticles(entries) : EMPTY_ARTICLES, [entries]);
+  const articles = state ? view.articles : EMPTY_ARTICLES;
   const readIds = useMemo(() => {
     const ids = new Set<string>();
     if (entries) for (const [id, entry] of entries) if (entry.readAt !== null) ids.add(id);
@@ -293,6 +325,8 @@ export function useBacklog(ownerId: string | null) {
   const setRead = useCallback((ids: string[], read: boolean) => { controllerFor()?.setRead(ids, read); }, [controllerFor]);
   const sync = useCallback(async () => { await controllerFor()?.sync(); }, [controllerFor]);
   const refreshFeeds = useCallback(async (feedIds: string[]) => { await controllerFor()?.refreshFeeds(feedIds); }, [controllerFor]);
+  // まとめて既読用。送れたかどうかを返す（送れなかった分も端末には残る）。
+  const sendRead = useCallback(async (ids: string[], read: boolean) => (await controllerFor()?.setReadAndSend(ids, read)) ?? false, [controllerFor]);
 
-  return { ready: state !== null, articles, readIds, setRead, sync, refreshFeeds, lastError: state ? view.lastError : '' };
+  return { ready: state !== null, articles, readIds, setRead, sendRead, sync, refreshFeeds, lastError: state ? view.lastError : '' };
 }
