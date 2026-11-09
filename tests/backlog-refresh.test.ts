@@ -18,11 +18,11 @@ test('refreshTargets: フィードを表示中ならそのフィードだけ、�
 test('refreshFailureMessage: 1件だけ頼んだときは名前と理由、複数のときは件数を知らせる', () => {
   const feeds = [feed('a'), feed('b'), feed('c')];
   assert.equal(refreshFailureMessage(feeds, 3, []), '');
-  assert.equal(refreshFailureMessage(feeds, 1, [{ feedId: 'b', kind: 'network' }]), '「名前b」を取得できませんでした（配信元に接続できませんでした）。');
-  assert.equal(refreshFailureMessage(feeds, 1, [{ feedId: 'b', kind: 'http' }]), '「名前b」を取得できませんでした（配信元がエラーを返しました）。');
-  assert.equal(refreshFailureMessage(feeds, 1, [{ feedId: 'b', kind: 'format' }]), '「名前b」を取得できませんでした（RSSとして読み込めませんでした）。');
-  assert.equal(refreshFailureMessage(feeds, 1, [{ feedId: 'b', kind: 'timeout' }]), '「名前b」を取得できませんでした（時間内に応答がありませんでした）。');
-  assert.equal(refreshFailureMessage(feeds, 1, [{ feedId: 'b', kind: 'server' }]), '「名前b」を取得できませんでした（サーバーで処理できませんでした）。');
+  assert.equal(refreshFailureMessage(feeds, 1, [{ feedId: 'b', kind: 'network' }]), '「名前b」を取得できませんでした（配信元に接続できませんでした）。URL：https://b.example/feed');
+  assert.equal(refreshFailureMessage(feeds, 1, [{ feedId: 'b', kind: 'http' }]), '「名前b」を取得できませんでした（配信元がエラーを返しました）。URL：https://b.example/feed');
+  assert.equal(refreshFailureMessage(feeds, 1, [{ feedId: 'b', kind: 'format' }]), '「名前b」を取得できませんでした（RSSとして読み込めませんでした）。URL：https://b.example/feed');
+  assert.equal(refreshFailureMessage(feeds, 1, [{ feedId: 'b', kind: 'timeout' }]), '「名前b」を取得できませんでした（時間内に応答がありませんでした）。URL：https://b.example/feed');
+  assert.equal(refreshFailureMessage(feeds, 1, [{ feedId: 'b', kind: 'server' }]), '「名前b」を取得できませんでした（サーバーで処理できませんでした）。URL：https://b.example/feed');
   // 配信元の文言はそのまま出さない。
   assert.equal(refreshFailureMessage(feeds, 1, [{ feedId: 'gone', kind: '<b>secret</b>' }]), '「フィード」を取得できませんでした（サーバーで処理できませんでした）。');
   assert.equal(refreshFailureMessage(feeds, 3, [{ feedId: 'a', kind: 'http' }, { feedId: 'c', kind: 'network' }]), '3件中2件のフィードを取得できませんでした。「フィードの管理」で状況を確認できます。');

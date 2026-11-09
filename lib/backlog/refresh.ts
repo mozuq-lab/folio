@@ -22,13 +22,13 @@ const REASONS: Record<string, string> = {
   timeout: '時間内に応答がありませんでした',
 };
 
-/** 取得できなかったフィードの知らせ。1件だけ頼んだときは名前と理由、複数のときは件数。失敗が無ければ空文字。 */
+/** 取得できなかったフィードの知らせ。1件だけ頼んだときは名前・理由・URL、複数のときは件数。失敗が無ければ空文字。 */
 export function refreshFailureMessage(feeds: Feed[], requested: number, failed: RefreshFailure[]): string {
   if (!failed.length) return '';
   if (requested === 1) {
-    const name = feeds.find(feed => feed.id === failed[0].feedId)?.name ?? 'フィード';
+    const feed = feeds.find(item => item.id === failed[0].feedId);
     const reason = Object.hasOwn(REASONS, failed[0].kind) ? REASONS[failed[0].kind] : 'サーバーで処理できませんでした';
-    return `「${name}」を取得できませんでした（${reason}）。`;
+    return `「${feed?.name ?? 'フィード'}」を取得できませんでした（${reason}）。${feed ? `URL：${feed.url}` : ''}`;
   }
   return `${requested}件中${failed.length}件のフィードを取得できませんでした。「フィードの管理」で状況を確認できます。`;
 }
