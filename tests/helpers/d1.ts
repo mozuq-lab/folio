@@ -21,7 +21,7 @@ function build() {
   const prepare = (sql: string) => {
     const query = { sql, values: [] as Value[] };
     const statement = {
-      bind(...values: Value[]) { query.values = values; return this; },
+      bind(...values: Value[]) { if (values.length > 100) throw new Error('D1 allows at most 100 bound parameters'); query.values = values; return this; },
       async first<T>() { return (sqlite.prepare(sql).get(...query.values) ?? null) as T | null; },
       async all<T>() { return { results: sqlite.prepare(sql).all(...query.values) as T[], success: true, meta: {} }; },
       async run() {

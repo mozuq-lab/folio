@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createTestD1 } from './helpers/d1.ts';
 import { handleFeedStates, handleImport, handleListChanges, handleRefreshFeed, handleSetRead } from '../lib/backlog/api.ts';
 import { getFeedTarget, listFeedStates, syncFeedList, syncFeedListIfChanged } from '../lib/backlog/schedule.ts';
-import { insertArticles } from '../lib/backlog/store.ts';
+import { insertArticles, listChanges } from '../lib/backlog/store.ts';
 import type { Article, Feed } from '../lib/types.ts';
 
 const NOW = new Date('2026-11-09T01:00:00.000Z');
@@ -35,6 +35,33 @@ test('handleListChangesは差分を返し、他の利用者の記事は含めな
   assert.equal(body.hasMore, false);
   const again = await (await handleListChanges(get(`/api/articles?after=${encodeURIComponent(body.next)}`), { db, user: U1 })).json() as { entries: unknown[] };
   assert.equal(again.entries.length, 0);
+});
+
+test('handleListChangesはlimitで件数を絞り、不正なlimitは400', async () => {
+  const db = await setup();
+  await insertArticles(db, 'u1', 'a', [article('x'), article('y'), article('z')], NOW);
+  const first = await (await handleListChanges(get('/api/articles?limit=2'), { db, user: U1 })).json() as { entries: { article: { id: string } }[]; next: string; hasMore: boolean };
+  assert.deepEqual([first.entries.map(e => e.article.id), first.hasMore], [['x', 'y'], true]);
+  const rest = await (await handleListChanges(get(`/api/articles?limit=2&after=${encodeURIComponent(first.next)}`), { db, user: U1 })).json() as typeof first;
+  assert.deepEqual([rest.entries.map(e => e.article.id), rest.hasMore], [['z'], false]);
+  assert.equal((await (await handleListChanges(get('/api/articles?limit=1000'), { db, user: U1 })).json() as typeof first).entries.length, 3);
+  for (const bad of ['0', '1001', 'abc', '1.5', '-1', '', '01e1']) {
+    const res = await handleListChanges(get(`/api/articles?limit=${bad}`), { db, user: U1 });
+    assert.equal(res.status, 400, bad);
+    assert.equal((await res.json() as { error: string }).error, 'limitが正しくありません。');
+  }
+});
+
+test('handleListChangesの応答は、記事を解析して組み立てた場合と同じ文字列になる', async () => {
+  const db = await setup();
+  await insertArticles(db, 'u1', 'a', [{ ...article('x'), title: '引用"と\\と\n改行', image: 'https://example.com/i.png', isSample: false }, article('y')], NOW);
+  const res = await handleListChanges(get('/api/articles'), { db, user: U1 });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'application/json');
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.equal(await res.text(), JSON.stringify({ ownerId: 'u1', ...await listChanges(db, 'u1', null) }));
+  const empty = await handleListChanges(get('/api/articles'), { db, user: U2 });
+  assert.equal(await empty.text(), JSON.stringify({ ownerId: 'u2', ...await listChanges(db, 'u2', null) }));
 });
 
 test('handleListChangesは不正なカーソルで400', async () => {

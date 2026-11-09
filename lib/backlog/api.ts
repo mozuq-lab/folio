@@ -1,10 +1,10 @@
 import { BodyTooLargeError, NO_STORE_HEADERS, isSameOrigin, readLimitedText } from '../http.ts';
 import type { Article } from '../types.ts';
 import { articleSchema } from '../cloud-library.ts';
-import { MAX_READ_BATCH } from './constants.ts';
+import { MAX_CHANGES_PAGE, MAX_READ_BATCH } from './constants.ts';
 import { getFeedTarget, listFeedStates } from './schedule.ts';
 import { fetchTarget } from './scheduled.ts';
-import { BacklogInputError, importArticles, listChanges, setRead } from './store.ts';
+import { BacklogInputError, importArticles, listChangeRows, setRead } from './store.ts';
 
 type Db = Pick<D1Database, 'prepare' | 'batch'>;
 type Ctx = { db: Db; user: { id: string } };
@@ -34,10 +34,25 @@ const failure = (error: unknown) => error instanceof TooLarge ? respond({ error:
 const isStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string');
 const isArticles = (value: unknown): value is Article[] => Array.isArray(value) && value.every(item => articleSchema.safeParse(item).success);
 
+/** ?limit= は1〜1000の整数。無ければ1000。 */
+function parseLimit(value: string | null): number {
+  if (value === null) return MAX_CHANGES_PAGE;
+  const limit = /^[1-9]\d{0,3}$/.test(value) ? Number(value) : 0;
+  if (limit < 1 || limit > MAX_CHANGES_PAGE) throw new BacklogInputError('limitが正しくありません。');
+  return limit;
+}
+
 export async function handleListChanges(request: Request, { db, user }: Ctx): Promise<Response> {
-  // 端末は ownerId を見て、別の利用者の記事を手元のバックログに混ぜない。
-  try { return respond({ ownerId: user.id, ...await listChanges(db, user.id, new URL(request.url).searchParams.get('after')) }); }
-  catch (error) {
+  try {
+    const params = new URL(request.url).searchParams;
+    const limit = parseLimit(params.get('limit'));
+    const { rows, next, hasMore } = await listChangeRows(db, user.id, params.get('after'), limit);
+    // 無料プランのCPU上限のため、記事（保存済みのJSON）は解析せずにそのまま埋め込む。形は {ownerId, entries, next, hasMore}。
+    // 端末は ownerId を見て、別の利用者の記事を手元のバックログに混ぜない。
+    const entries = rows.map(row => `{"article":${row.payload},"feedId":${JSON.stringify(row.feedId)},"fetchedAt":${JSON.stringify(row.fetchedAt)},"readAt":${JSON.stringify(row.readAt)}}`);
+    const text = `{"ownerId":${JSON.stringify(user.id)},"entries":[${entries.join(',')}],"next":${JSON.stringify(next)},"hasMore":${hasMore}}`;
+    return new Response(text, { headers: { ...NO_STORE_HEADERS, 'Content-Type': 'application/json' } });
+  } catch (error) {
     if (error instanceof BacklogInputError) return respond({ error: error.message }, 400);
     return respond({ error: '記事を読み込めませんでした。' }, 500);
   }
