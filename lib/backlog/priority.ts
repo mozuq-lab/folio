@@ -22,3 +22,15 @@ export function formatFetchState(state: FeedFetchState | undefined, now: Date): 
   const date = `${at.getMonth() + 1}/${at.getDate()}`;
   return `最後に取得：${at.getFullYear() === now.getFullYear() ? date : `${at.getFullYear()}/${date}`} ${time}`;
 }
+
+/** GET /api/feeds/state の応答（{ feeds: [...] }）を feedId ごとの表に直す。形が違うものは捨てる。 */
+export function parseFeedStates(body: unknown): Record<string, FeedFetchState> {
+  const out: Record<string, FeedFetchState> = {};
+  const rows = body && typeof body === 'object' ? (body as { feeds?: unknown }).feeds : undefined;
+  if (!Array.isArray(rows)) return out;
+  for (const r of rows) {
+    if (!r || typeof r !== 'object' || typeof r.feedId !== 'string') continue;
+    out[r.feedId] = { lastFetchedAt: typeof r.lastFetchedAt === 'string' ? r.lastFetchedAt : null, lastError: typeof r.lastError === 'string' ? r.lastError : null };
+  }
+  return out;
+}

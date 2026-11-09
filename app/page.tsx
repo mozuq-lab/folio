@@ -12,7 +12,7 @@ import { freezeOrder, mergeReadIds, mergeViewArticles, routeReadChange } from '@
 import { needsBacklogMigration, retainArticle } from '@/lib/backlog/migration';
 import { pruneLibrary, runBacklogMigration } from '@/lib/backlog/migration-runner';
 import { backlogOwnerId } from '@/lib/client-library';
-import { formatFetchState, togglePriority, type FeedFetchState } from '@/lib/backlog/priority';
+import { formatFetchState, parseFeedStates, togglePriority, type FeedFetchState } from '@/lib/backlog/priority';
 import { loadContent, saveContent } from '@/lib/backlog/client-db';
 import { useArticleLayout } from '@/hooks/use-article-layout';
 import type { ArticleLayout } from '@/lib/article-layout';
@@ -97,10 +97,11 @@ export default function Home(){
  const [fetchStates,setFetchStates]=useState<Record<string,FeedFetchState>>({});
  useEffect(()=>{
   if(modal!=='feeds'||!ownerId)return;let active=true;
-  fetch('/api/feeds/state',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(15000)}).then(r=>r.ok?r.json():null).then((rows:unknown)=>{if(!active||!Array.isArray(rows))return;const next:Record<string,FeedFetchState>={};for(const r of rows)if(r&&typeof r.feedId==='string')next[r.feedId]={lastFetchedAt:typeof r.lastFetchedAt==='string'?r.lastFetchedAt:null,lastError:typeof r.lastError==='string'?r.lastError:null};setFetchStates(next);}).catch(()=>{});
-  return()=>{active=false;};
+  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),15000);
+  fetch('/api/feeds/state',{credentials:'same-origin',cache:'no-store',signal:controller.signal}).then(r=>r.ok?r.json():null).then((body:unknown)=>{if(active)setFetchStates(parseFeedStates(body));}).catch(()=>{}).finally(()=>clearTimeout(timer));
+  return()=>{active=false;clearTimeout(timer);controller.abort();};
  },[modal,ownerId]);
- const togglePriorityFeed=(id:string)=>{const result=togglePriority(state.feeds,id);setFeedError(result.error??'');if(!result.error)setState(s=>({...s,feeds:togglePriority(s.feeds,id).feeds}));};
+ const togglePriorityFeed=(id:string)=>setState(s=>{const r=togglePriority(s.feeds,id);setFeedError(r.error??'');return r.error?s:{...s,feeds:r.feeds};});
  const [message,setMessage]=useState('');
  const searchRef=useRef<HTMLInputElement>(null);
  // For You の並びは refreshToken が変わるまで固定する（更新・新着・開き直し・AIで選び直す）。settled は開いた直後の同期が終わったか。

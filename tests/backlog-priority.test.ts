@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatFetchState, togglePriority } from '../lib/backlog/priority.ts';
+import { formatFetchState, parseFeedStates, togglePriority } from '../lib/backlog/priority.ts';
 import type { Feed } from '../lib/types.ts';
 
 const feed = (id: string, priority?: boolean) => ({ id, name: id, url: `https://${id}.example/feed`, category: 'x', color: '#000', initial: 'x', ...(priority === undefined ? {} : { priority }) }) as Feed;
@@ -41,4 +41,10 @@ test('formatFetchState の3パターン', () => {
   assert.equal(formatFetchState({ lastFetchedAt: new Date(2025, 11, 31, 9, 7).toISOString(), lastError: null }, now), '最後に取得：2025/12/31 9:07');
   assert.equal(formatFetchState({ lastFetchedAt: new Date(2026, 10, 9, 14, 5).toISOString(), lastError: 'http' }, now), '取得に失敗しました');
   assert.equal(formatFetchState({ lastFetchedAt: null, lastError: 'network' }, now), '取得に失敗しました');
+});
+
+test('parseFeedStates は { feeds: [...] } を読み、不正な形は空にする', () => {
+  const body = { feeds: [{ feedId: 'a', lastFetchedAt: '2026-11-09T05:00:00.000Z', lastError: null }, { feedId: 'b', lastFetchedAt: null, lastError: 'http' }, { nope: 1 }, null] };
+  assert.deepEqual(parseFeedStates(body), { a: { lastFetchedAt: '2026-11-09T05:00:00.000Z', lastError: null }, b: { lastFetchedAt: null, lastError: 'http' } });
+  for (const bad of [null, 'x', [], { feeds: 'x' }, [{ feedId: 'a' }]]) assert.deepEqual(parseFeedStates(bad), {});
 });
