@@ -39,6 +39,8 @@ export interface ReaderState {
   saved: string[];
   read: string[];
   backlogMigratedAt?: string;
+  /** 分類の並びと、各分類のフィードの並び。無ければ各フィードの category から作る（lib/folders.ts）。 */
+  folders?: { name: string; feedIds: string[] }[];
   feedback: Feedback;
   preferences: Preferences;
   lastUpdated: string | null;
