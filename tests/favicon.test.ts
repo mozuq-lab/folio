@@ -85,3 +85,24 @@ test('安全でないURLへの転送やHTML内のリンクは追わない', asyn
   assert.equal((await handleFavicon(req('https://example.com'), { fetcher })).status, 404);
   assert.ok(!calls.some(url => url.includes('127.0.0.1') || url.startsWith('http:')));
 });
+
+test('一時的な失敗（時間切れ・5xx・接続できない）は「無い」としてキャッシュしない', async () => {
+  const cache = memoryCache();
+  const failing = (async () => { throw new TypeError('connection reset'); }) as typeof fetch;
+  const res = await handleFavicon(req('https://example.com'), { fetcher: failing, cache });
+  assert.equal(res.status, 404);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.equal(cache.store.size, 0);
+  const { fetcher } = fetcherOf({ 'https://example.com/favicon.ico': () => new Response('busy', { status: 503 }) });
+  assert.equal((await handleFavicon(req('https://example.com'), { fetcher, cache })).headers.get('cache-control'), 'no-store');
+  assert.equal(cache.store.size, 0);
+});
+
+test('トップページが256KBを超えても、先頭の <head> からアイコンを探す', async () => {
+  const html = `<html><head><link rel="icon" href="/i.png"></head><body>${'x'.repeat(400 * 1024)}</body></html>`;
+  const { fetcher } = fetcherOf({
+    'https://example.com/': () => new Response(html, { headers: { 'content-type': 'text/html' } }),
+    'https://example.com/i.png': () => new Response(PNG, { headers: { 'content-type': 'image/png' } }),
+  });
+  assert.equal((await handleFavicon(req('https://example.com'), { fetcher })).status, 200);
+});

@@ -90,3 +90,22 @@ test('同期データ：folders は任意項目。無い文書・ある文書を
   assert.equal(decodeState(JSON.stringify(reader()), fallback).feeds.length, 1);
   assert.equal(decodeState(JSON.stringify(reader({ folders: [{ name: 1, feedIds: [] }] })), fallback), fallback);
 });
+
+test('resolveFolders: 長すぎる分類名と上限を超える分類は作らず、同期データの検証を通る', () => {
+  const many = [feed('long', 'あ'.repeat(201)), ...Array.from({ length: 250 }, (_, i) => feed(`f${i}`, `分類${i}`))];
+  const folders = resolveFolders(many, undefined);
+  assert.equal(folders.length, MAX_FOLDERS);
+  assert.ok(!folders.some(folder => folder.feedIds.includes('long')));
+  const reader = { version: 1, articles: [], feeds: withCategories(many, folders), saved: [], read: [], feedback: {}, preferences: { interests: [], mutedTopics: [], topicWeights: {}, sourceWeights: {}, diversity: 50 }, lastUpdated: null, folders } as unknown as ReaderState;
+  assert.equal(validateSyncDocument({ version: 2, reader, intelligence: DEFAULT_INTELLIGENCE, updatedAt: 't' }), true);
+});
+
+test('addFeedsToFolders: createMissing が false なら、無い分類は作らずに未分類のままにする', () => {
+  const base = [{ name: 'Tech', feedIds: ['a'] }];
+  assert.deepEqual(addFeedsToFolders(base, [feed('n', 'テクノロジー'), feed('m', 'Tech')], { createMissing: false }), [{ name: 'Tech', feedIds: ['a', 'm'] }]);
+});
+
+test('分類の名前に「すべて」は使えない', () => {
+  assert.equal(createFolder([], 'すべて').error, '「すべて」は分類の名前に使えません。');
+  assert.equal(renameFolder([{ name: 'A', feedIds: [] }], 'A', 'すべて').error, '「すべて」は分類の名前に使えません。');
+});

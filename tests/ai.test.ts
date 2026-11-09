@@ -90,3 +90,9 @@ test('timeoutはeffortに応じ、時間切れでsignalがabortされ504にな�
     }finally{mock.timers.reset();}
   }
 });
+test('analyzeの理由は80字、要約は200字までに切り詰めて返す',async()=>{
+  const long={articleId:'a',interest:1,importance:1,summary:'あ'.repeat(600),reason:'い'.repeat(300),importanceReason:'う'.repeat(300)};
+  const result=await runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:[long]})));
+  assert.ok(result.kind==='analyze');
+  assert.equal(result.analysis[0].summary.length,200);assert.equal(result.analysis[0].reason.length,80);assert.equal(result.analysis[0].importanceReason.length,80);
+});

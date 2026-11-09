@@ -51,7 +51,7 @@ function validateResult(value:unknown,schema:Schema,request:AIRequest):AIResult 
   if(result.kind==='analyze'){
     // 多くの記事を一度に評価するので、一部の記事が抜けても評価できた分は使う。重複と送っていない記事は除く。
     const seen=new Set<string>();
-    result.analysis=result.analysis.filter(item=>articles.has(item.articleId)&&!seen.has(item.articleId)&&seen.add(item.articleId));
+    result.analysis=result.analysis.filter(item=>articles.has(item.articleId)&&!seen.has(item.articleId)&&seen.add(item.articleId)).map(item=>({...item,summary:item.summary.slice(0,200),reason:item.reason.slice(0,80),importanceReason:item.importanceReason.slice(0,80)}));
     if(!result.analysis.length)invalidOutput();
   } else if(result.kind==='digest'){
     const digest=result.digest;
