@@ -3,16 +3,17 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 
 type Value = string | number | null;
-export type D1Like = {
-  prepare(sql: string): unknown;
-  batch(statements: object[]): Promise<unknown[]>;
-};
+export type D1Like = Pick<D1Database, 'prepare' | 'batch'>;
 
 const MIGRATIONS = fileURLToPath(new URL('../../drizzle/', import.meta.url));
 const LIMIT = 2000000;
 const bytes = (value: string) => new TextEncoder().encode(value).byteLength;
 
 export function createTestD1(): D1Like & { sqlite: DatabaseSync } {
+  return build() as unknown as D1Like & { sqlite: DatabaseSync };
+}
+
+function build() {
   const sqlite = new DatabaseSync(':memory:');
   for (const file of readdirSync(MIGRATIONS).filter(name => name.endsWith('.sql')).sort())
     for (const statement of readFileSync(MIGRATIONS + file, 'utf8').split('--> statement-breakpoint')) if (statement.trim()) sqlite.exec(statement);
@@ -37,7 +38,9 @@ export function createTestD1(): D1Like & { sqlite: DatabaseSync } {
       const result = statements.map(statement => {
         const query = queries.get(statement)!;
         for (const value of query.values) if (typeof value === 'string' && bytes(value) > LIMIT) throw new Error('D1 binding exceeds 2MB');
-        const results = sqlite.prepare(query.sql).all(...query.values);
+        const prepared = sqlite.prepare(query.sql);
+        if (prepared.columns().length === 0) return { results: [], success: true, meta: { changes: Number(prepared.run(...query.values).changes) } };
+        const results = prepared.all(...query.values);
         for (const row of results) if (Object.values(row).reduce<number>((sum, value) => sum + (typeof value === 'string' ? bytes(value) : 8), 0) > LIMIT) throw new Error('D1 row exceeds 2MB');
         return { results, success: true, meta: {} };
       });
