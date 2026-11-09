@@ -35,7 +35,8 @@ const isStrings = (value: unknown): value is string[] => Array.isArray(value) &&
 const isArticles = (value: unknown): value is Article[] => Array.isArray(value) && value.every(item => articleSchema.safeParse(item).success);
 
 export async function handleListChanges(request: Request, { db, user }: Ctx): Promise<Response> {
-  try { return respond(await listChanges(db, user.id, new URL(request.url).searchParams.get('after'))); }
+  // 端末は ownerId を見て、別の利用者の記事を手元のバックログに混ぜない。
+  try { return respond({ ownerId: user.id, ...await listChanges(db, user.id, new URL(request.url).searchParams.get('after')) }); }
   catch (error) {
     if (error instanceof BacklogInputError) return respond({ error: error.message }, 400);
     return respond({ error: '記事を読み込めませんでした。' }, 500);
@@ -48,7 +49,7 @@ export async function handleSetRead(request: Request, { db, user }: Ctx, now = n
     const body = await readJson(request, MAX_SMALL_BYTES);
     if (!isStrings(body.ids) || typeof body.read !== 'boolean') return BAD_BODY();
     if (body.ids.length > MAX_READ_BATCH) return respond({ error: '一度に既読にできるのは1,000件までです。' }, 400);
-    return respond({ updated: await setRead(db, user.id, body.ids, body.read, now) });
+    return respond({ ownerId: user.id, updated: await setRead(db, user.id, body.ids, body.read, now) });
   } catch (error) {
     return failure(error) ?? respond({ error: '既読を保存できませんでした。' }, 500);
   }

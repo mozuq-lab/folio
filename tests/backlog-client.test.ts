@@ -130,3 +130,20 @@ test('parseChanges accepts the API response and skips malformed entries', () => 
   assert.equal(parseChanges({ entries: {}, next: 'c', hasMore: false }), null);
   assert.equal(parseChanges({ entries: [], next: 'c' }), null);
 });
+
+test('applyChanges keeps reads acknowledged while the page was being fetched', () => {
+  let state = applyChanges(emptyBacklog('u1'), [entry('a'), entry('b'), entry('c')], 'c1');
+  state = queueRead(state, ['a', 'b'], true, NOW);
+  state = acknowledgeReads(state, takePendingBatches(state)[0]);
+  state = queueRead(state, ['b'], false, NOW);
+  // The page was requested before the acknowledgement, so it still reports a and b as unread and c as read.
+  const settled = new Map([['a', true], ['b', true]]);
+  const next = applyChanges(state, [entry('a'), entry('b'), entry('c', { readAt: ago(0) })], 'c2', settled);
+  assert.equal(isRead(next, 'a'), true);
+  assert.notEqual(next.entries.get('a')?.readAt, null);
+  // A newer unsent operation wins over the acknowledged one.
+  assert.equal(isRead(next, 'b'), false);
+  assert.equal(isRead(next, 'c'), true);
+  // Settled operations are not turned back into unsent ones.
+  assert.deepEqual([...next.pendingReads], [['b', false]]);
+});

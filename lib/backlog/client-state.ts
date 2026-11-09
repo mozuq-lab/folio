@@ -21,12 +21,15 @@ export function isRead(state: BacklogState, id: string): boolean {
   return pending ?? (state.entries.get(id)?.readAt ?? null) !== null;
 }
 
-/** サーバーの差分を反映する。未送信の既読操作がある記事は、既読状態だけ端末の値を残す。 */
-export function applyChanges(state: BacklogState, entries: BacklogEntry[], next: string): BacklogState {
+/**
+ * サーバーの差分を反映する。未送信の既読操作がある記事は、既読状態だけ端末の値を残す。
+ * settled は、この差分を取りに行った後で送信できた操作。差分の方が古いので、未送信と同じく端末の値を残す。
+ */
+export function applyChanges(state: BacklogState, entries: BacklogEntry[], next: string, settled: ReadonlyMap<string, boolean> = new Map()): BacklogState {
   const merged = new Map(state.entries);
   for (const incoming of entries) {
     const id = incoming.article.id;
-    const pending = state.pendingReads.get(id);
+    const pending = state.pendingReads.get(id) ?? settled.get(id);
     if (pending === undefined) { merged.set(id, incoming); continue; }
     const local = merged.get(id);
     // 端末に記事が無いまま既読にした場合は、時刻の代わりに取得時刻を入れる（既読であることだけが意味を持つ）。

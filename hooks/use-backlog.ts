@@ -15,19 +15,28 @@ const OFFLINE_ERROR = 'サーバーに接続できません。接続後に同期
 const LOAD_ERROR = '記事を読み込めませんでした。';
 const READ_ERROR = '既読を保存できませんでした。';
 const REFRESH_ERROR = '取得に失敗しました';
+const OWNER_ERROR = '別のアカウントでログインしています。ページを再読み込みしてください。';
 
 type View = { state: BacklogState | null; lastError: string };
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const errorText = (body: unknown, fallback: string) => isRecord(body) && typeof body.error === 'string' ? body.error : fallback;
 
-/** 1人の持ち主の端末側バックログを、Reactの描画とは別に持つ。持ち主が変わったら作り直す。 */
+/**
+ * 1人の持ち主の端末側バックログを、Reactの描画とは別に持つ。持ち主が変わったら作り直す。
+ * サーバーの応答の ownerId がこの持ち主と違えば止まり、以後は何も送らない。
+ */
 class BacklogSync {
   readonly ownerId: string;
   lastAttemptAt = 0;
   private onChange: (view: View) => void;
   private state: BacklogState | null = null;
-  private lastError = '';
+  private syncError = '';
+  private readError = '';
+  private stopError = '';
   private disposed = false;
+  private stopped = false;
+  // 応答の ownerId を一度確かめるまでは、未送信の既読操作を送らない。
+  private verified = false;
   // 読み込み前の既読操作。読み込み後に反映する。
   private early: { ids: string[]; read: boolean }[] = [];
   private loading: Promise<void> = Promise.resolve();
@@ -35,6 +44,9 @@ class BacklogSync {
   private syncing: Promise<void> | null = null;
   private syncAgain = false;
   private flushing: Promise<void> | null = null;
+  // 取得中の差分ページより後に送信できた既読操作。そのページの応答では端末の値を残す。
+  private getInFlight = false;
+  private settled = new Map<string, boolean>();
 
   constructor(ownerId: string, onChange: (view: View) => void) {
     this.ownerId = ownerId;
@@ -48,6 +60,11 @@ class BacklogSync {
 
   dispose(): void { this.disposed = true; }
 
+  /** 送受信してよい間だけ状態を返す。 */
+  private active(): BacklogState | null {
+    return this.disposed || this.stopped ? null : this.state;
+  }
+
   private async load(): Promise<void> {
     const loaded = forOwner(await loadBacklog(this.ownerId), this.ownerId);
     if (this.disposed) return;
@@ -60,7 +77,7 @@ class BacklogSync {
   }
 
   private emit(): void {
-    if (!this.disposed) this.onChange({ state: this.state, lastError: this.lastError });
+    if (!this.disposed) this.onChange({ state: this.state, lastError: this.stopError || this.readError || this.syncError });
   }
 
   private commit(next: BacklogState): void {
@@ -70,9 +87,21 @@ class BacklogSync {
     this.emit();
   }
 
-  private setError(message: string): void {
-    if (this.disposed || this.lastError === message) return;
-    this.lastError = message;
+  // 既読の送信と差分の取得の失敗は分けて持つ。差分の取得に成功しても、未送信の既読があることは知らせ続ける。
+  private setErrors(patch: { sync?: string; read?: string }): void {
+    if (this.disposed) return;
+    const sync = patch.sync ?? this.syncError;
+    const read = patch.read ?? this.readError;
+    if (sync === this.syncError && read === this.readError) return;
+    this.syncError = sync;
+    this.readError = read;
+    this.emit();
+  }
+
+  private stop(): void {
+    if (this.disposed || this.stopped) return;
+    this.stopped = true;
+    this.stopError = OWNER_ERROR;
     this.emit();
   }
 
@@ -83,101 +112,129 @@ class BacklogSync {
   setRead(ids: string[], read: boolean): void {
     if (this.disposed || !ids.length) return;
     if (!this.state) { this.early.push({ ids: [...ids], read }); return; }
-    // 先に端末へ保存し（flushが保存の完了を待つ）、それから送る。
+    // 先に端末へ保存し（flushが保存の完了を待つ）、それから送る。止まった後も端末には残す。
     this.commit(queueRead(this.state, ids, read));
     void this.flush();
   }
 
   flush(): Promise<void> {
+    if (!this.verified || !this.active()) return Promise.resolve();
     this.flushing ??= this.sendReads().finally(() => { this.flushing = null; });
     return this.flushing;
   }
 
   private async sendReads(): Promise<void> {
-    await this.loading;
     for (;;) {
       await this.saving.catch(() => undefined);
-      if (this.disposed || !this.state) return;
-      const [batch] = takePendingBatches(this.state);
+      const state = this.active();
+      if (!state || !this.verified) return;
+      const [batch] = takePendingBatches(state);
       if (!batch) return;
       let response: Response;
       let body: unknown;
       try {
         response = await this.request('/api/articles/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(batch) });
         body = await response.json().catch(() => null);
-      } catch { this.setError(OFFLINE_ERROR); return; }
-      if (this.disposed || !this.state) return;
-      if (response.ok) { this.commit(acknowledgeReads(this.state, batch)); continue; }
+      } catch { this.setErrors({ read: OFFLINE_ERROR }); return; }
+      const current = this.active();
+      if (!current) return;
+      if (response.ok) {
+        // 別の利用者として保存された。操作は残し、以後は送らない。
+        if (!isRecord(body) || body.ownerId !== this.ownerId) { this.stop(); return; }
+        if (this.getInFlight) {
+          for (const id of batch.ids) this.settled.set(id, batch.read);
+          // 取得中のページは送信前の内容なので、同じ同期の中でもう一度取りに行く。
+          this.syncAgain = true;
+        }
+        this.commit(acknowledgeReads(current, batch));
+        this.setErrors({ read: '' });
+        continue;
+      }
       if (response.status === 400) {
         // 内容が受け付けられない操作は再送しても通らないので捨てる。
-        this.commit(acknowledgeReads(this.state, batch));
-        this.setError(errorText(body, READ_ERROR));
+        this.commit(acknowledgeReads(current, batch));
+        this.setErrors({ read: errorText(body, READ_ERROR) });
         continue;
       }
       // ログイン切れや通信の不調。操作は端末に残し、次の同期で送る。
-      this.setError(errorText(body, READ_ERROR));
+      this.setErrors({ read: errorText(body, READ_ERROR) });
       return;
     }
   }
 
   sync(): Promise<void> {
+    if (this.disposed || this.stopped) return Promise.resolve();
     if (this.syncing) { this.syncAgain = true; return this.syncing; }
     this.syncing = (async () => {
-      do { this.syncAgain = false; await this.pull(); } while (this.syncAgain && !this.disposed);
+      do { this.syncAgain = false; await this.pull(); } while (this.syncAgain && this.active());
     })().finally(() => { this.syncing = null; });
     return this.syncing;
   }
 
   private async pull(): Promise<void> {
     await this.loading;
+    if (!this.active()) return;
     this.lastAttemptAt = Date.now();
     await this.flush();
     let restarted = false;
     for (let page = 0; page < MAX_PAGES_PER_SYNC; page++) {
-      if (this.disposed || !this.state) return;
-      const cursor = this.state.cursor;
+      const before = this.active();
+      if (!before) return;
+      const cursor = before.cursor;
+      this.settled = new Map();
+      this.getInFlight = true;
       let response: Response;
       let body: unknown;
       try {
         response = await this.request(cursor === null ? '/api/articles' : `/api/articles?after=${encodeURIComponent(cursor)}`);
         body = await response.json().catch(() => null);
-      } catch { this.setError(OFFLINE_ERROR); return; }
-      if (this.disposed || !this.state) return;
+      } catch { this.setErrors({ sync: OFFLINE_ERROR }); return; } finally { this.getInFlight = false; }
+      const state = this.active();
+      if (!state) return;
       if (response.status === 400 && cursor !== null && !restarted) {
         // カーソルを受け付けられなかった。手元の記事は残したまま最初から取り直す。
         restarted = true;
-        this.commit({ ...this.state, cursor: null });
+        this.commit({ ...state, cursor: null });
         continue;
       }
-      if (!response.ok) { this.setError(errorText(body, LOAD_ERROR)); return; }
-      // 応答に持ち主が含まれていれば、別の利用者の記事を混ぜない。
-      if (isRecord(body) && typeof body.ownerId === 'string' && body.ownerId !== this.ownerId) { this.setError(LOAD_ERROR); return; }
+      if (!response.ok) { this.setErrors({ sync: errorText(body, LOAD_ERROR) }); return; }
+      // 別の利用者の記事は手元のバックログに混ぜず、以後は何も送らない。
+      if (!isRecord(body) || body.ownerId !== this.ownerId) { this.stop(); return; }
       const changes = parseChanges(body);
-      if (!changes) { this.setError(LOAD_ERROR); return; }
-      this.commit(applyChanges(this.state, changes.entries, changes.next));
+      if (!changes) { this.setErrors({ sync: LOAD_ERROR }); return; }
+      this.commit(applyChanges(state, changes.entries, changes.next, this.settled));
+      if (!this.verified) {
+        // 持ち主を確かめられたので、未送信の既読操作を送る。
+        this.verified = true;
+        await this.flush();
+      }
       if (!changes.hasMore || changes.next === cursor) break;
     }
-    if (this.disposed || !this.state) return;
-    this.commit(expireEntries(this.state, new Date()));
-    this.setError('');
+    const state = this.active();
+    if (!state) return;
+    this.commit(expireEntries(state, new Date()));
+    this.setErrors({ sync: '' });
   }
 
   async refreshFeeds(feedIds: string[]): Promise<void> {
     await this.loading;
+    // 持ち主を確かめる前は、先に差分を1回取得して確かめる。
+    if (!this.verified) await (this.syncing ?? this.sync());
+    if (!this.active() || !this.verified) return;
     let failed = false;
     // 無料プランのCPU上限のため、サーバーには1フィードずつ順に頼む。
     for (const feedId of feedIds) {
-      if (this.disposed) return;
+      if (!this.active()) return;
       try {
         const response = await this.request(`/api/feeds/refresh?feed=${encodeURIComponent(feedId)}`, { method: 'POST' }, REFRESH_TIMEOUT_MS);
         const body: unknown = await response.json().catch(() => null);
         // 404はまだサーバーに同期されていないフィード。次の同期後に取得できる。
         if (response.status === 404) continue;
         if (!response.ok || (isRecord(body) && typeof body.error === 'string')) failed = true;
-      } catch { this.setError(OFFLINE_ERROR); return; }
+      } catch { this.setErrors({ sync: OFFLINE_ERROR }); return; }
     }
     await this.sync();
-    if (failed) this.setError(REFRESH_ERROR);
+    if (failed) this.setErrors({ sync: REFRESH_ERROR });
   }
 }
 
@@ -228,9 +285,14 @@ export function useBacklog(ownerId: string | null) {
     return ids;
   }, [entries, pendingReads]);
 
-  const setRead = useCallback((ids: string[], read: boolean) => { controllerRef.current?.setRead(ids, read); }, []);
-  const sync = useCallback(async () => { await controllerRef.current?.sync(); }, []);
-  const refreshFeeds = useCallback(async (feedIds: string[]) => { await controllerRef.current?.refreshFeeds(feedIds); }, []);
+  // 描画中の持ち主と違う controller（切り替え直後に残ったもの）には頼まない。
+  const controllerFor = useCallback(() => {
+    const controller = controllerRef.current;
+    return controller && controller.ownerId === ownerId ? controller : null;
+  }, [ownerId]);
+  const setRead = useCallback((ids: string[], read: boolean) => { controllerFor()?.setRead(ids, read); }, [controllerFor]);
+  const sync = useCallback(async () => { await controllerFor()?.sync(); }, [controllerFor]);
+  const refreshFeeds = useCallback(async (feedIds: string[]) => { await controllerFor()?.refreshFeeds(feedIds); }, [controllerFor]);
 
   return { ready: state !== null, articles, readIds, setRead, sync, refreshFeeds, lastError: state ? view.lastError : '' };
 }
