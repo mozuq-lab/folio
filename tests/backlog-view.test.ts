@@ -101,12 +101,23 @@ test('sendReadBatches: 送信が例外を投げても失敗として扱う', asy
   assert.deepEqual(result, { sent: 0, failedAt: 0 });
 });
 
-test('importRequests: 記事を1,000件ずつに分け、それぞれの既読を添え、本文は送らない', () => {
-  const articles = Array.from({ length: 1500 }, (_, i) => art(`a${i}`, i === 0 ? { content: '本文', contentFetchedAt: '2026-11-01T00:00:00Z' } : {}));
-  const requests = importRequests({ articles, read: ['a0', 'a1200'] });
-  assert.deepEqual(requests.map(r => r.articles.length), [1000, 500]);
-  assert.deepEqual(requests.map(r => r.read), [['a0'], ['a1200']]);
+test('importRequests: 記事を250件ずつに分け、それぞれの既読を添え、本文と未知の項目は送らない', () => {
+  const legacy = { ...art('a1', { content: '本文' }), legacyField: 1 } as Article;
+  const articles = Array.from({ length: 600 }, (_, i) => i === 1 ? legacy : art(`a${i}`, i === 0 ? { content: '本文', contentFetchedAt: '2026-11-01T00:00:00Z' } : {}));
+  const requests = importRequests({ articles, read: ['a0', 'a520'] });
+  assert.deepEqual(requests.map(r => r.articles.length), [250, 250, 100]);
+  assert.deepEqual(requests.map(r => r.read), [['a0'], [], ['a520']]);
   assert.equal('content' in requests[0].articles[0], false);
   assert.equal('contentFetchedAt' in requests[0].articles[0], false);
+  assert.deepEqual(Object.keys(requests[0].articles[1]).sort(), Object.keys(art('x')).sort());
   assert.deepEqual(importRequests({ articles: [], read: [] }), []);
+});
+
+test('importRequests: 本体の無い既読IDは、記事の無い取り込みとして1,000件ずつ送る', () => {
+  const orphans = Array.from({ length: 1500 }, (_, i) => `gone${i}`);
+  const requests = importRequests({ articles: [art('a'), art('b')], read: ['a', ...orphans] });
+  assert.deepEqual(requests.map(r => [r.articles.length, r.read.length]), [[2, 1], [0, 1000], [0, 500]]);
+  assert.deepEqual(requests[0].read, ['a']);
+  assert.deepEqual([...requests[1].read, ...requests[2].read], orphans);
+  assert.deepEqual(importRequests({ articles: [], read: ['x'] }), [{ articles: [], read: ['x'] }]);
 });

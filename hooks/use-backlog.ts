@@ -2,15 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadBacklog, saveBacklog } from '../lib/backlog/client-db.ts';
-import { acknowledgeReads, applyChanges, expireEntries, forOwner, parseChanges, queueRead, takePendingBatches, type BacklogState } from '../lib/backlog/client-state.ts';
+import { acknowledgeReads, applyChanges, changesUrl, expireEntries, forOwner, parseChanges, queueRead, takePendingBatches, type BacklogState } from '../lib/backlog/client-state.ts';
 import type { BacklogEntry } from '../lib/backlog/types.ts';
 import type { Article } from '../lib/types.ts';
 
 const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 15000;
 const REFRESH_TIMEOUT_MS = 30000;
-// サーバーが同じカーソルを返し続けた場合でも止まるようにする。
-const MAX_PAGES_PER_SYNC = 200;
+// サーバーが同じカーソルを返し続けた場合でも止まるようにする。1ページ250件で20万件まで。超えた分は次の同期で続きから取る。
+const MAX_PAGES_PER_SYNC = 800;
 const OFFLINE_ERROR = 'サーバーに接続できません。接続後に同期します。';
 const LOAD_ERROR = '記事を読み込めませんでした。';
 const READ_ERROR = '既読を保存できませんでした。';
@@ -224,7 +224,7 @@ class BacklogSync {
       let response: Response;
       let body: unknown;
       try {
-        response = await this.request(cursor === null ? '/api/articles' : `/api/articles?after=${encodeURIComponent(cursor)}`);
+        response = await this.request(changesUrl(cursor));
         body = await response.json().catch(() => null);
       } catch { this.setErrors({ sync: OFFLINE_ERROR }); return; } finally { this.getInFlight = false; }
       const state = this.active();

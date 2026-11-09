@@ -45,6 +45,18 @@ test('runBacklogMigration: 全部取り込めたら保持対象だけにし、�
   assert.equal(h.reader.backlogMigratedAt, NOW.toISOString());
 });
 
+test('runBacklogMigration: 本体の無い既読IDも送り、取り込んだ記事だけを外す', async () => {
+  const orphans = Array.from({ length: 1200 }, (_, i) => `gone${i}`);
+  const { h, deps } = harness(reader({ read: ['saved', 'a', ...orphans] }));
+  assert.equal(await runBacklogMigration(deps), 'done');
+  assert.deepEqual(h.posts.map(p => [ids(p.articles), p.read.length]), [[['saved', 'noted', 'a', 'b'], 2], [[], 1000], [[], 200]]);
+  assert.deepEqual([...h.posts[1].read, ...h.posts[2].read], orphans);
+  assert.deepEqual(ids(h.reader.articles), ['saved', 'noted']);
+  assert.deepEqual(h.reader.read, ['saved']);
+  assert.deepEqual(h.reads, []);
+  assert.equal(h.reader.backlogMigratedAt, NOW.toISOString());
+});
+
 test('runBacklogMigration: 途中の送信が失敗したら何も外さない', async () => {
   const many = Array.from({ length: 1500 }, (_, i) => art(`m${i}`));
   const { h, deps } = harness(reader({ articles: many, read: [], saved: [] }), { fail: 1 });

@@ -23,6 +23,17 @@ export function formatFetchState(state: FeedFetchState | undefined, now: Date): 
   return `最後に取得：${at.getFullYear() === now.getFullYear() ? date : `${at.getFullYear()}/${date}`} ${time}`;
 }
 
+/**
+ * 「フィードを更新」で取得するフィード。優先フィードがあればそれを、無ければ最後の取得が古い2件を選ぶ
+ * （未取得が先。取得状況が分からなければ購読の先頭から2件）。定期取得の選び方と同じ。
+ */
+export function refreshTargets(feeds: Feed[], states: Record<string, FeedFetchState>): string[] {
+  const priority = feeds.filter(f => f.priority);
+  if (priority.length) return priority.map(f => f.id);
+  const at = (f: Feed) => states[f.id]?.lastFetchedAt ?? '';
+  return [...feeds].sort((a, b) => at(a) < at(b) ? -1 : at(a) > at(b) ? 1 : 0).slice(0, 2).map(f => f.id);
+}
+
 /** GET /api/feeds/state の応答（{ feeds: [...] }）を feedId ごとの表に直す。形が違うものは捨てる。 */
 export function parseFeedStates(body: unknown): Record<string, FeedFetchState> {
   const out: Record<string, FeedFetchState> = {};

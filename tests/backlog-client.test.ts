@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { acknowledgeReads, applyChanges, emptyBacklog, expireEntries, forOwner, isRead, parseChanges, queueRead, takePendingBatches, type BacklogState } from '../lib/backlog/client-state.ts';
+import { CHANGES_PAGE_SIZE, acknowledgeReads, applyChanges, changesUrl, emptyBacklog, expireEntries, forOwner, isRead, parseChanges, queueRead, takePendingBatches, type BacklogState } from '../lib/backlog/client-state.ts';
 import type { BacklogEntry } from '../lib/backlog/types.ts';
 
 const NOW = new Date('2026-11-09T00:00:00.000Z');
@@ -146,4 +146,10 @@ test('applyChanges keeps reads acknowledged while the page was being fetched', (
   assert.equal(isRead(next, 'c'), true);
   // Settled operations are not turned back into unsent ones.
   assert.deepEqual([...next.pendingReads], [['b', false]]);
+});
+
+test('changesUrl asks for a smaller page and passes the cursor', () => {
+  assert.equal(CHANGES_PAGE_SIZE, 250);
+  assert.equal(changesUrl(null), '/api/articles?limit=250');
+  assert.equal(changesUrl('3:a b&c'), '/api/articles?limit=250&after=3%3Aa%20b%26c');
 });

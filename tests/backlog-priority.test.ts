@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatFetchState, parseFeedStates, togglePriority } from '../lib/backlog/priority.ts';
+import { formatFetchState, parseFeedStates, refreshTargets, togglePriority } from '../lib/backlog/priority.ts';
 import type { Feed } from '../lib/types.ts';
 
 const feed = (id: string, priority?: boolean) => ({ id, name: id, url: `https://${id}.example/feed`, category: 'x', color: '#000', initial: 'x', ...(priority === undefined ? {} : { priority }) }) as Feed;
@@ -47,4 +47,15 @@ test('parseFeedStates は { feeds: [...] } を読み、不正な形は空にす�
   const body = { feeds: [{ feedId: 'a', lastFetchedAt: '2026-11-09T05:00:00.000Z', lastError: null }, { feedId: 'b', lastFetchedAt: null, lastError: 'http' }, { nope: 1 }, null] };
   assert.deepEqual(parseFeedStates(body), { a: { lastFetchedAt: '2026-11-09T05:00:00.000Z', lastError: null }, b: { lastFetchedAt: null, lastError: 'http' } });
   for (const bad of [null, 'x', [], { feeds: 'x' }, [{ feedId: 'a' }]]) assert.deepEqual(parseFeedStates(bad), {});
+});
+
+test('refreshTargets: 優先フィードがあればそれだけ、無ければ最後の取得が古い2件（未取得が先）', () => {
+  const state = (lastFetchedAt: string | null) => ({ lastFetchedAt, lastError: null });
+  assert.deepEqual(refreshTargets([feed('a'), feed('p', true), feed('b'), feed('q', true)], {}), ['p', 'q']);
+  const feeds = [feed('a'), feed('b'), feed('c'), feed('d')];
+  assert.deepEqual(refreshTargets(feeds, { a: state('2026-11-09T02:00:00Z'), b: state('2026-11-09T01:00:00Z'), c: state(null), d: state('2026-11-09T03:00:00Z') }), ['c', 'b']);
+  assert.deepEqual(refreshTargets(feeds, { a: state('2026-11-09T02:00:00Z'), b: state('2026-11-09T01:00:00Z'), c: state('2026-11-09T00:00:00Z') }), ['d', 'c']);
+  assert.deepEqual(refreshTargets(feeds, {}), ['a', 'b']);
+  assert.deepEqual(refreshTargets([feed('a')], {}), ['a']);
+  assert.deepEqual(refreshTargets([], {}), []);
 });
