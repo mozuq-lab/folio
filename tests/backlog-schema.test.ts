@@ -4,9 +4,10 @@ import { createTestD1 } from './helpers/d1.ts';
 
 const columns = (db: ReturnType<typeof createTestD1>, table: string) => (db.sqlite.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(row => row.name);
 
-test('バックログ用の4テーブルが仕様どおりの列を持つ', () => {
+test('バックログ用のテーブルが仕様どおりの列を持つ', () => {
   const db = createTestD1();
   assert.deepEqual(columns(db, 'folio_articles'), ['user_id', 'article_id', 'feed_id', 'url', 'published_at', 'fetched_at', 'read_at', 'updated_seq', 'payload']);
+  assert.deepEqual(columns(db, 'folio_seq'), ['user_id', 'value']);
   assert.deepEqual(columns(db, 'folio_feeds'), ['user_id', 'feed_id', 'url', 'name', 'priority']);
   assert.deepEqual(columns(db, 'folio_users'), ['user_id', 'email', 'last_seen_at']);
   assert.deepEqual(columns(db, 'folio_feed_state'), ['user_id', 'feed_id', 'last_fetched_at', 'etag', 'last_modified', 'last_error']);
