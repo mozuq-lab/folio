@@ -12,7 +12,7 @@ export function toggleFolder(collapsed: string[], folder: string): string[] {
   return collapsed.includes(folder) ? collapsed.filter(name => name !== folder) : [...collapsed, folder];
 }
 
-const VIEWS = new Set(['for-you', 'digest', 'stories', 'notebook', 'explore', 'all', 'saved']);
+const VIEWS = new Set(['for-you', 'digest', 'notebook', 'explore', 'all', 'saved']);
 
 /** 表示を開くURL。中クリックやコンテキストメニューから別タブで開けるように、リンクの href に使う。 */
 export function viewHref(view: string): string {
