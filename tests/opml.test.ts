@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseOpml, exportOpml } from '../lib/opml.ts';
+import { parseOpml, parseOpmlDetailed, exportOpml } from '../lib/opml.ts';
 const wrap=(body:string)=>`<?xml version="1.0"?><opml version="2.0"><head><title>Subscriptions</title></head><body>${body}</body></opml>`;
 test('入れ子folderのカテゴリとRSSメタデータを保持する',()=>{
   const feeds=parseOpml(wrap('<outline text="技術"><outline text="AI"><outline type="rss" text="研究 &amp; 実装" xmlUrl="https://example.com/feed" htmlUrl="https://example.com/blog"/></outline></outline>'));
@@ -10,13 +10,28 @@ test('URLの表記差を正規化し重複を除外する',()=>{
   const feeds=parseOpml(wrap('<outline xmlUrl="https://EXAMPLE.com:443/feed#one"/><outline xmlUrl="https://example.com/feed#two"/>'));
   assert.equal(feeds.length,1);assert.equal(feeds[0].url,'https://example.com/feed');
 });
-test('危険URL、DOCTYPE、entity、壊れたXMLとOPML以外を拒否する',()=>{
-  for(const url of ['http://example.com/rss','javascript:alert(1)','https://127.0.0.1/rss','https://10.0.0.1/rss','https://[::1]/rss','https://user:pass@example.com/rss','https://localhost/rss','https://example.internal/rss','https://example.com:8443/rss']) assert.throws(()=>parseOpml(wrap(`<outline xmlUrl="${url}"/>`)));
-  for(const xml of ['<!DOCTYPE opml [<!ENTITY x SYSTEM "file:///etc/passwd">]>'+wrap('<outline text="&x;"/>'),'<opml><body>','<rss><channel/></rss>']) assert.throws(()=>parseOpml(xml));
+test('httpのフィードとサイトURLはhttpsに読み替えて取り込み、件数を返す',()=>{
+  const result=parseOpmlDetailed(wrap('<outline text="セキュリティ"><outline type="rss" text="JPCERT" xmlUrl="http://www.jpcert.or.jp/rss/jpcert.rdf" htmlUrl="http://www.jpcert.or.jp/"/></outline><outline xmlUrl="https://example.com/feed"/>'));
+  assert.deepEqual(result.feeds.map(f=>f.url),['https://www.jpcert.or.jp/rss/jpcert.rdf','https://example.com/feed']);
+  assert.equal(result.feeds[0].website,'https://www.jpcert.or.jp/');assert.equal(result.feeds[0].category,'セキュリティ');
+  assert.equal(result.upgraded,1);assert.deepEqual(result.skipped,[]);
+  assert.equal(parseOpml(wrap('<outline xmlUrl="http://example.com/rss"/>'))[0].url,'https://example.com/rss');
 });
-test('巨大ファイルと500件を超えるimportを拒否する',()=>{
+test('危険・非公開のURLは取り込まず、名前と理由を返して残りを取り込む',()=>{
+  const bad=['javascript:alert(1)','https://127.0.0.1/rss','http://10.0.0.1/rss','https://[::1]/rss','https://user:pass@example.com/rss','https://localhost/rss','https://example.internal/rss','https://example.com:8443/rss','http://example.com:8080/rss','ftp://example.com/rss'];
+  const result=parseOpmlDetailed(wrap(bad.map((url,i)=>`<outline text="bad${i}" xmlUrl="${url}"/>`).join('')+'<outline text="ok" xmlUrl="https://example.com/ok"/>'));
+  assert.deepEqual(result.feeds.map(f=>f.url),['https://example.com/ok']);
+  assert.equal(result.skipped.length,bad.length);
+  assert.deepEqual(result.skipped[0],{name:'bad0',url:'javascript:alert(1)',reason:'公開されたHTTPSのURLとして読み込めません'});
+  assert.equal(result.upgraded,0);
+});
+test('DOCTYPE、entity、壊れたXMLとOPML以外はファイル全体を拒否する',()=>{
+  for(const xml of ['<!DOCTYPE opml [<!ENTITY x SYSTEM "file:///etc/passwd">]>'+wrap('<outline text="&x;"/>'),'<opml><body>','<rss><channel/></rss>']) { assert.throws(()=>parseOpml(xml));assert.throws(()=>parseOpmlDetailed(xml)); }
+});
+test('巨大ファイルは拒否し、500件を超えた分は取り込まずに知らせる',()=>{
   assert.throws(()=>parseOpml(wrap(' '.repeat(1024*1024))));
-  assert.throws(()=>parseOpml(wrap(Array.from({length:501},(_,i)=>`<outline xmlUrl="https://example.com/${i}"/>`).join(''))));
+  const many=parseOpmlDetailed(wrap(Array.from({length:501},(_,i)=>`<outline text="f${i}" xmlUrl="https://example.com/${i}"/>`).join('')));
+  assert.equal(many.feeds.length,500);assert.deepEqual(many.skipped,[{name:'f500',url:'https://example.com/500',reason:'一度に取り込めるのは500件までです'}]);
 });
 test('特殊文字を含むfeedのexportを再importして内容を保持する',()=>{
   const feeds=parseOpml(wrap('<outline text="技術 &amp; 研究"><outline text="A &quot;B&quot; &lt;C&gt;" xmlUrl="https://example.com/feed?x=1&amp;y=2" htmlUrl="https://example.com/"/></outline>'));
