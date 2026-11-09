@@ -1,9 +1,9 @@
 import type { Article } from '../types.ts';
 import { MAX_CHANGES_PAGE, MAX_READ_BATCH, RETENTION_DAYS } from './constants.ts';
+import type { BacklogEntry, StoredArticle } from './types.ts';
+export type { BacklogEntry, StoredArticle } from './types.ts';
 
 type Db = Pick<D1Database, 'prepare' | 'batch'>;
-export type StoredArticle = Omit<Article, 'content' | 'contentFetchedAt'>;
-export type BacklogEntry = { article: StoredArticle; feedId: string; fetchedAt: string; readAt: string | null };
 export class BacklogInputError extends Error {}
 
 // D1は1文あたりのバインド数が100まで。1回のbatchに入れる文の数も抑える。
