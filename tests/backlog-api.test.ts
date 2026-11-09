@@ -134,3 +134,25 @@ test('syncFeedListIfChangedは差分があるときだけ書く', async () => {
   assert.equal(Number(db.sqlite.prepare('SELECT count(*) AS n FROM folio_feeds').get()!.n), 1);
   assert.equal(await syncFeedListIfChanged(db, 'u1', [feed('a'), feed('a')]), false);
 });
+
+test('handleImportは余分な項目や不正な型の記事を400で拒否する', async () => {
+  const db = await setup();
+  for (const bad of [{ ...article('x'), extra: 1 }, { ...article('x'), tags: 'a' }, { ...article('x'), readingMinutes: '1' }, Object.fromEntries(Object.entries(article('x')).filter(([key]) => key !== 'description'))])
+    assert.equal((await handleImport(post('/api/articles/import', { articles: [article('ok'), bad], read: [] }), { db, user: U1 }, NOW)).status, 400);
+  assert.equal(Number(db.sqlite.prepare('SELECT count(*) AS n FROM folio_articles').get()!.n), 0);
+});
+
+test('handleImportはcontent付きの記事を取り込むがcontentは保存しない', async () => {
+  const db = await setup();
+  const res = await handleImport(post('/api/articles/import', { articles: [{ ...article('x'), content: 'body', contentFetchedAt: NOW.toISOString() }], read: [] }), { db, user: U1 }, NOW);
+  assert.deepEqual(await res.json(), { inserted: 1, markedRead: 0 });
+  const row = db.sqlite.prepare('SELECT payload FROM folio_articles').get() as { payload: string };
+  assert.ok(!('content' in JSON.parse(row.payload)) && !('contentFetchedAt' in JSON.parse(row.payload)));
+});
+
+test('handleRefreshFeedはDBエラーで500のJSONを返す', async () => {
+  const db = { prepare: () => { throw new Error('db down'); }, batch: async () => [] } as never;
+  const res = await handleRefreshFeed(post('/api/feeds/refresh?feed=a', {}), { db, user: U1 }, { now: NOW });
+  assert.equal(res.status, 500);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+});

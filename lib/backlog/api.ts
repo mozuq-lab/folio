@@ -1,5 +1,6 @@
 import { BodyTooLargeError, NO_STORE_HEADERS, isSameOrigin, readLimitedText } from '../http.ts';
 import type { Article } from '../types.ts';
+import { articleSchema } from '../cloud-library.ts';
 import { MAX_READ_BATCH } from './constants.ts';
 import { getFeedTarget, listFeedStates } from './schedule.ts';
 import { fetchTarget } from './scheduled.ts';
@@ -31,11 +32,7 @@ const failure = (error: unknown) => error instanceof TooLarge ? respond({ error:
   : error instanceof BacklogInputError ? respond({ error: error.message }, 400)
   : error instanceof BadBody ? BAD_BODY() : null;
 const isStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string');
-const isArticle = (value: unknown): value is Article => {
-  if (!value || typeof value !== 'object') return false;
-  const a = value as Record<string, unknown>;
-  return ['id', 'title', 'url', 'sourceId', 'publishedAt'].every(key => typeof a[key] === 'string' && a[key] !== '');
-};
+const isArticles = (value: unknown): value is Article[] => Array.isArray(value) && value.every(item => articleSchema.safeParse(item).success);
 
 export async function handleListChanges(request: Request, { db, user }: Ctx): Promise<Response> {
   try { return respond(await listChanges(db, user.id, new URL(request.url).searchParams.get('after'))); }
@@ -61,7 +58,7 @@ export async function handleImport(request: Request, { db, user }: Ctx, now = ne
   if (!isSameOrigin(request)) return FORBIDDEN();
   try {
     const body = await readJson(request, MAX_IMPORT_BYTES);
-    if (!Array.isArray(body.articles) || !body.articles.every(isArticle) || !isStrings(body.read)) return BAD_BODY();
+    if (!isArticles(body.articles) || !isStrings(body.read)) return BAD_BODY();
     return respond(await importArticles(db, user.id, body.articles, body.read, now));
   } catch (error) {
     return failure(error) ?? respond({ error: '記事を取り込めませんでした。' }, 500);
@@ -72,10 +69,12 @@ export async function handleImport(request: Request, { db, user }: Ctx, now = ne
 export async function handleRefreshFeed(request: Request, { db, user }: Ctx, options: { now?: Date; fetcher?: typeof fetch } = {}): Promise<Response> {
   if (!isSameOrigin(request)) return FORBIDDEN();
   const feedId = new URL(request.url).searchParams.get('feed');
-  const target = feedId ? await getFeedTarget(db, user.id, feedId) : null;
-  if (!target) return respond({ error: 'フィードが見つかりません。' }, 404);
-  const { inserted, error } = await fetchTarget(db, target, options.now ?? new Date(), options.fetcher);
-  return respond(error ? { inserted, error } : { inserted });
+  try {
+    const target = feedId ? await getFeedTarget(db, user.id, feedId) : null;
+    if (!target) return respond({ error: 'フィードが見つかりません。' }, 404);
+    const { inserted, error } = await fetchTarget(db, target, options.now ?? new Date(), options.fetcher);
+    return respond(error ? { inserted, error } : { inserted });
+  } catch { return respond({ error: 'フィードを取得できませんでした。' }, 500); }
 }
 
 export async function handleFeedStates({ db, user }: Ctx): Promise<Response> {
