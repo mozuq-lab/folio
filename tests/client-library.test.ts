@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeCache, LibrarySyncController, type LibraryCache } from '../lib/client-library.ts';
+import { backlogOwnerId, decodeCache, LibrarySyncController, type LibraryCache } from '../lib/client-library.ts';
 import { DEFAULT_INTELLIGENCE, type CloudLibrary } from '../lib/intelligence-types.ts';
 import type { ReaderState } from '../lib/types.ts';
 const reader=():ReaderState=>({version:1,articles:[],feeds:[],saved:[],read:[],feedback:{},preferences:{interests:[],mutedTopics:[],topicWeights:{},sourceWeights:{},diversity:30},lastUpdated:null});
@@ -129,4 +129,11 @@ test('verifiedOwnerIdはサーバーが確かめた持ち主だけを示し、�
   mode='signedOut';await controller.hydrate();assert.equal(controller.view.verifiedOwnerId,null);
   const unavailable=new LibrarySyncController(local(),{fallbackReader:reader(),fetcher:async()=>json({error:'未接続です',ownerId:'carol'},503)});
   await unavailable.hydrate();assert.equal(unavailable.view.verifiedOwnerId,'carol');
+});
+test('backlogOwnerIdは確かめた持ち主を使い、オフラインのときだけ端末のcacheの持ち主で端末内の記事を開く',()=>{
+  assert.equal(backlogOwnerId('alice','synced','alice'),'alice');
+  assert.equal(backlogOwnerId('alice','offline','bob'),'alice');
+  assert.equal(backlogOwnerId(null,'offline','alice'),'alice');
+  assert.equal(backlogOwnerId(null,'offline',undefined),null);
+  for(const status of ['loading','local','error','conflict','syncing'] as const)assert.equal(backlogOwnerId(null,status,'alice'),null);
 });

@@ -60,7 +60,8 @@ export async function handleImport(request: Request, { db, user }: Ctx, now = ne
   try {
     const body = await readJson(request, MAX_IMPORT_BYTES);
     if (!isArticles(body.articles) || !isStrings(body.read)) return BAD_BODY();
-    return respond(await importArticles(db, user.id, body.articles, body.read, now));
+    // 端末は ownerId を見て、移行中に利用者が替わっていないかを確かめる。
+    return respond({ ownerId: user.id, ...await importArticles(db, user.id, body.articles, body.read, now) });
   } catch (error) {
     return failure(error) ?? respond({ error: '記事を取り込めませんでした。' }, 500);
   }

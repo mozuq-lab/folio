@@ -70,7 +70,8 @@ test('handleImportは記事と既読を取り込む', async () => {
   const db = await setup();
   const res = await handleImport(post('/api/articles/import', { articles: [article('x'), article('y')], read: ['x'] }), { db, user: U1 }, NOW);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { inserted: 2, markedRead: 1 });
+  // 端末は ownerId を見て、別の利用者として取り込まれていないかを確かめる。
+  assert.deepEqual(await res.json(), { ownerId: 'u1', inserted: 2, markedRead: 1 });
 });
 
 test('handleImportは別オリジンで403、件数超過・不正な形で400', async () => {
@@ -147,7 +148,7 @@ test('handleImportは余分な項目や不正な型の記事を400で拒否す�
 test('handleImportはcontent付きの記事を取り込むがcontentは保存しない', async () => {
   const db = await setup();
   const res = await handleImport(post('/api/articles/import', { articles: [{ ...article('x'), content: 'body', contentFetchedAt: NOW.toISOString() }], read: [] }), { db, user: U1 }, NOW);
-  assert.deepEqual(await res.json(), { inserted: 1, markedRead: 0 });
+  assert.deepEqual(await res.json(), { ownerId: 'u1', inserted: 1, markedRead: 0 });
   const row = db.sqlite.prepare('SELECT payload FROM folio_articles').get() as { payload: string };
   assert.ok(!('content' in JSON.parse(row.payload)) && !('contentFetchedAt' in JSON.parse(row.payload)));
 });

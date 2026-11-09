@@ -254,25 +254,27 @@ class BacklogSync {
     this.setErrors({ sync: '' });
   }
 
-  async refreshFeeds(feedIds: string[]): Promise<void> {
+  /** 取得と差分の受け取りがすべて成功したら true。 */
+  async refreshFeeds(feedIds: string[]): Promise<boolean> {
     await this.loading;
     // 持ち主を確かめる前は、先に差分を1回取得して確かめる。
     if (!this.verified) await (this.syncing ?? this.sync());
-    if (!this.active() || !this.verified) return;
+    if (!this.active() || !this.verified) return false;
     let failed = false;
     // 無料プランのCPU上限のため、サーバーには1フィードずつ順に頼む。
     for (const feedId of feedIds) {
-      if (!this.active()) return;
+      if (!this.active()) return false;
       try {
         const response = await this.request(`/api/feeds/refresh?feed=${encodeURIComponent(feedId)}`, { method: 'POST' }, REFRESH_TIMEOUT_MS);
         const body: unknown = await response.json().catch(() => null);
         // 404はまだサーバーに同期されていないフィード。次の同期後に取得できる。
         if (response.status === 404) continue;
         if (!response.ok || (isRecord(body) && typeof body.error === 'string')) failed = true;
-      } catch { this.setErrors({ sync: OFFLINE_ERROR }); return; }
+      } catch { this.setErrors({ sync: OFFLINE_ERROR }); return false; }
     }
     await this.sync();
     if (failed) this.setErrors({ sync: REFRESH_ERROR });
+    return !failed && !!this.active() && this.syncError === '';
   }
 }
 
@@ -324,7 +326,7 @@ export function useBacklog(ownerId: string | null) {
   }, [ownerId]);
   const setRead = useCallback((ids: string[], read: boolean) => { controllerFor()?.setRead(ids, read); }, [controllerFor]);
   const sync = useCallback(async () => { await controllerFor()?.sync(); }, [controllerFor]);
-  const refreshFeeds = useCallback(async (feedIds: string[]) => { await controllerFor()?.refreshFeeds(feedIds); }, [controllerFor]);
+  const refreshFeeds = useCallback(async (feedIds: string[]) => (await controllerFor()?.refreshFeeds(feedIds)) ?? false, [controllerFor]);
   // まとめて既読用。送れたかどうかを返す（送れなかった分も端末には残る）。
   const sendRead = useCallback(async (ids: string[], read: boolean) => (await controllerFor()?.setReadAndSend(ids, read)) ?? false, [controllerFor]);
 
