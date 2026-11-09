@@ -11,7 +11,7 @@ const returning = (json:unknown):AIProvider => fake(()=>({kind:'ok',json}));
 const runtime = (provider:AIProvider,effort:'auto'|'medium'|'high'='medium') => ({provider,model:'test-model',effort});
 const ask = {kind:'ask',result:{answer:'対象地域で移動時間が短縮しました。',citations:[{articleId:'a',quote:'移動時間が短縮した。'}]}};
 test('不正action・記事上限・重複ID・予算・未知の既読/ノート参照を拒否する', () => {
-  for(const value of [{action:'invalid',articles:[]},{...request('analyze'),articles:Array.from({length:31},(_,i)=>({...article,id:String(i)}))},{...request('ask'),articles:[article,article]},{...request('digest'),budgetMinutes:31},{...request('compare'),readIds:['unknown']},{...request('ask'),notes:[{id:'n',articleId:'other',quote:'',body:'note',createdAt:'now',updatedAt:'now'}]}]) assert.throws(()=>validateRequest(value),AIError);
+  for(const value of [{action:'invalid',articles:[]},{...request('analyze'),articles:Array.from({length:51},(_,i)=>({...article,id:String(i)}))},{...request('digest'),articles:Array.from({length:31},(_,i)=>({...article,id:String(i)}))},{...request('ask'),articles:[article,article]},{...request('digest'),budgetMinutes:31},{...request('compare'),readIds:['unknown']},{...request('ask'),notes:[{id:'n',articleId:'other',quote:'',body:'note',createdAt:'now',updatedAt:'now'}]}]) assert.throws(()=>validateRequest(value),AIError);
 });
 test('存在しない記事と本文にないquoteを成功として返さない',async()=>{
   for(const result of [{kind:'ask',result:{answer:'回答',citations:[{articleId:'other',quote:'交通'}]}},{kind:'ask',result:{answer:'回答',citations:[{articleId:'a',quote:'架空の引用'}]}}]) await assert.rejects(runAI(request('ask'),runtime(returning(result))),AIError);
@@ -22,10 +22,21 @@ test('引用0件なら根拠という単語や断定を含む回答もアプリ�
     assert.deepEqual(result,{kind:'ask',result:{answer:'保存記事から回答の根拠を見つけられませんでした。質問を具体的にするか、関連する記事を保存してください。',citations:[]}});
   }
 });
-test('analyzeは関心と重要度を独立に返し、欠落・重複・不正scoreを拒否する',async()=>{
-  const analysis={articleId:'a',interest:10,importance:90,summary:'調査の概要',reason:'関心との一致は小さい',importanceReason:'交通政策への影響'};
+test('analyzeは関心と重要度を独立に返し、不正scoreと空の結果を拒否する',async()=>{
+  const analysis={articleId:'a',interest:10,importance:90,summary:'',reason:'関心との一致は小さい',importanceReason:'交通政策への影響'};
   assert.deepEqual(await runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:[analysis]}))),{kind:'analyze',analysis:[analysis]});
-  for(const list of [[],[analysis,analysis],[{...analysis,importance:101}]]) await assert.rejects(runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:list}))),AIError);
+  for(const list of [[],[{...analysis,importance:101}],[{...analysis,articleId:'unknown'}]]) await assert.rejects(runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:list}))),AIError);
+});
+test('analyzeは50件まで送れ、重複・不明なIDは除き、評価できなかった記事は結果に含めない',async()=>{
+  const many=Array.from({length:50},(_,i)=>({...article,id:`a${i}`,description:'',content:undefined}));
+  const item=(id:string)=>({articleId:id,interest:50,importance:50,summary:'',reason:'r',importanceReason:'i'});
+  const result=await runAI({action:'analyze',articles:many,instruction:''},runtime(returning({kind:'analyze',analysis:[item('a0'),item('a0'),item('zz'),item('a1')]})));
+  assert.deepEqual(result.kind==='analyze'&&result.analysis.map(a=>a.articleId),['a0','a1']);
+});
+test('analyzeの指示は、見出しだけで評価し、summaryを空にして理由を短くするよう求める',async()=>{
+  let seen='';
+  await runAI(request('analyze'),runtime(fake(r=>{seen=r.instructions;return {kind:'ok',json:{kind:'analyze',analysis:[{articleId:'a',interest:1,importance:1,summary:'',reason:'r',importanceReason:'i'}]}};})));
+  assert.ok(seen.includes('summaryは空文字')&&seen.includes('40字以内'));
 });
 test('自然文をNaturalProfileに構造化し、未定義フィールドとenumを拒否する',async()=>{
   const result={kind:'preferences',profile:{summary:'研究を優先',boostTerms:['研究'],muteTerms:[],preferredDepth:'advanced'}};
@@ -68,7 +79,7 @@ test('providerへモデル・effort・出力上限・schema名・signalを渡し
   assert.ok(seen.instructions.includes('未取得')&&!seen.instructions.includes('交通研究'));assert.ok(seen.input.includes('交通研究'));
 });
 test('timeoutはeffortに応じ、時間切れでsignalがabortされ504になる',async()=>{
-  for(const [effort,ms] of [['auto',45_000],['medium',90_000],['high',120_000]] as const){
+  for(const [effort,ms] of [['auto',90_000],['medium',180_000],['high',240_000]] as const){
     mock.timers.enable({apis:['setTimeout']});
     try{
       const pending=runAI(request('ask'),runtime(fake(r=>new Promise((_,reject)=>r.signal.addEventListener('abort',()=>reject(new Error('aborted'))))),effort));

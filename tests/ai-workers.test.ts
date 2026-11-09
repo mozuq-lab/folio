@@ -58,6 +58,6 @@ test('runAIのタイムアウトで応答しないWorkers AIは504 timeout', asy
   const pending = runAI({ action: 'ask', question: 'q', articles: [article] }, { provider: provider(() => new Promise(() => {})), model: '@cf/x', effort: 'auto' });
   const check = assert.rejects(pending, (e: unknown) => e instanceof AIError && e.status === 504 && e.code === 'timeout');
   await Promise.resolve();
-  t.mock.timers.tick(45_000);
+  t.mock.timers.tick(90_000);
   await check;
 });
