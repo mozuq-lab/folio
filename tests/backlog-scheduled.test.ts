@@ -58,6 +58,18 @@ test('1件目が失敗しても2件目を処理し、失敗の種類だけを記
   assert.equal(count(db), 1);
 });
 
+test('フィードのURLがHTMLを返したら、ページのフィードの指定を探さずに失敗として記録する', async () => {
+  const db = await setup([feed('a')]);
+  const calls: string[] = [];
+  const page = '<html><head><link rel="alternate" type="application/rss+xml" href="https://example.com/real.xml"></head></html>';
+  const fetcher = (async (url: string) => { calls.push(url); return url.endsWith('/a.xml') ? new Response(page, { headers: { 'content-type': 'text/html' } }) : new Response(rss('z')); }) as typeof fetch;
+  const result = await runScheduledFetch({ db, now: NOW, allowedEmails: ALLOWED, fetcher });
+  assert.deepEqual(result, { fetched: 0, inserted: 0, failed: 1, purged: 0 });
+  assert.equal(state(db, 'a').last_error, 'format');
+  assert.deepEqual(calls, ['https://example.com/a.xml']);
+  assert.equal(count(db), 0);
+});
+
 test('取得中の例外はnetworkとして記録される', async () => {
   const db = await setup([feed('a')]);
   const fetcher = (async () => { throw new TypeError('boom'); }) as typeof fetch;

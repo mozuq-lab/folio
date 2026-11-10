@@ -39,6 +39,27 @@ export async function readLimitedBytes(body: ReadableStream<Uint8Array> | null, 
   return data;
 }
 
+/** 先頭の maxBytes までを読み、残りは読まずに止める（HTMLの <head> だけが要るときに、大きいページでも途中まで使う）。 */
+export async function readPrefixBytes(body: ReadableStream<Uint8Array> | null, maxBytes: number): Promise<Uint8Array> {
+  if (!body) return new Uint8Array(0);
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (size < maxBytes) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      chunks.push(chunk.value.subarray(0, maxBytes - size));
+      size += Math.min(chunk.value.byteLength, maxBytes - size);
+    }
+    if (size >= maxBytes) await reader.cancel();
+  } finally { reader.releaseLock(); }
+  const data = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength; }
+  return data;
+}
+
 export async function readLimitedText(body: ReadableStream<Uint8Array> | null, contentLength: string | null, maxBytes: number): Promise<string> {
   return new TextDecoder('utf-8', { fatal: true }).decode(await readLimitedBytes(body, contentLength, maxBytes));
 }

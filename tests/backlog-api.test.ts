@@ -134,6 +134,16 @@ test('handleRefreshFeedは304でETagを保ち、失敗は種類だけを返す',
   assert.deepEqual(await failed.json(), { inserted: 0, error: 'http' });
 });
 
+test('handleRefreshFeedはフィードのURLがHTMLを返したら、ページのフィードを探さずに失敗にする', async () => {
+  const db = await setup();
+  const calls: string[] = [];
+  const page = '<html><head><link rel="alternate" type="application/rss+xml" href="https://example.com/real.xml"></head></html>';
+  const fetcher = (async (url: string) => { calls.push(url); return url.endsWith('/a.xml') ? new Response(page, { headers: { 'content-type': 'text/html; charset=utf-8' } }) : new Response(rss('p')); }) as typeof fetch;
+  const res = await handleRefreshFeed(post('/api/feeds/refresh?feed=a', {}), { db, user: U1 }, { now: NOW, fetcher });
+  assert.deepEqual(await res.json(), { inserted: 0, error: 'format' });
+  assert.deepEqual(calls, ['https://example.com/a.xml']);
+});
+
 test('handleRefreshFeedは未登録・他人のフィードで404、別オリジンで403', async () => {
   const db = await setup();
   let called = 0;
