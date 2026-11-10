@@ -10,7 +10,8 @@ export function FeedIcon({ feed, fallback }: { feed?: Pick<Feed, 'website' | 'ur
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   // 読み込みが終わるまでは頭文字を見せ、終わってからファビコンを重ねる（読み込み中の白い四角を出さない）。
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
-  return <span className="source-avatar feed-icon" style={{ background: feed?.color || '#4a6e5c' }} aria-hidden="true">
+  // 色は background-color だけに置く。暗い配色では CSS の background-image（--tile-shade）が色を沈め、白い頭文字を読みやすくする。
+  return <span className="source-avatar feed-icon" style={{ backgroundColor: feed?.color || '#4a6e5c' }} aria-hidden="true">
     {feed?.initial || Array.from(fallback ?? '')[0] || ''}
     {/* 画面の最初の描画より前に読み込みに失敗していると onError が届かないので、表示した時点でも確かめる。 */}
     {src && failedSrc !== src && <img ref={image => { if (image?.complete) { if (image.naturalWidth === 0) setFailedSrc(src); else setLoadedSrc(src); } }} className={loadedSrc === src ? 'is-loaded' : undefined} src={src} alt="" loading="lazy" decoding="async" onLoad={() => setLoadedSrc(src)} onError={() => setFailedSrc(src)} />}
