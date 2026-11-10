@@ -1,11 +1,11 @@
 import { isSafeFeedUrl } from './feeds.ts';
-import { BodyTooLargeError, readLimitedBytes } from './http.ts';
+import { HTML_HEAD_BYTES, headLinks } from './html-head.ts';
+import { BodyTooLargeError, readLimitedBytes, readPrefixBytes } from './http.ts';
 
 /** Cache API（caches.default）のうち使う部分。テストでは差し替える。 */
 export type FaviconCache = { match(key: Request): Promise<Response | undefined>; put(key: Request, response: Response): Promise<void> };
 
 const MAX_ICON_BYTES = 100 * 1024;
-const MAX_HTML_BYTES = 256 * 1024;
 const TIMEOUT_MS = 5000;
 const FOUND_SECONDS = 7 * 86400;
 const MISSING_SECONDS = 86400;
@@ -13,27 +13,6 @@ const SAFE_HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Content-Security-Po
 
 /** 配信元の一時的な失敗（5xx）。「ファビコンが無い」とは区別し、キャッシュしない。 */
 class TransientError extends Error {}
-
-/** 先頭の maxBytes までを読み、残りは読まずに止める（<head> だけが要るので、大きいページでも途中まで使う）。 */
-async function readPrefix(body: ReadableStream<Uint8Array> | null, maxBytes: number): Promise<Uint8Array> {
-  if (!body) return new Uint8Array(0);
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (size < maxBytes) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      chunks.push(chunk.value.subarray(0, maxBytes - size));
-      size += Math.min(chunk.value.byteLength, maxBytes - size);
-    }
-    if (size >= maxBytes) await reader.cancel();
-  } finally { reader.releaseLock(); }
-  const data = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength; }
-  return data;
-}
 
 // 先頭のバイトで画像の種類を決める。SVGは中にスクリプトを書けるので扱わない。
 function imageType(bytes: Uint8Array): string | null {
@@ -82,13 +61,11 @@ async function fetchIcon(url: string, fetcher: typeof fetch, signal: AbortSignal
 async function iconLinks(site: string, fetcher: typeof fetch, signal: AbortSignal): Promise<{ icons: string[]; touch: string[] }> {
   const fetched = await fetchSafe(`${site}/`, fetcher, signal);
   if (!fetched) return { icons: [], touch: [] };
-  const html = new TextDecoder().decode(await readPrefix(fetched.response.body, MAX_HTML_BYTES));
-  const head = html.slice(0, Math.max(0, html.search(/<\/head>/i)) || html.length);
+  const html = new TextDecoder().decode(await readPrefixBytes(fetched.response.body, HTML_HEAD_BYTES));
   const links: { href: string; touch: boolean }[] = [];
-  for (const [tag] of head.matchAll(/<link\b[^>]*>/gi)) {
-    const rel = /\brel\s*=\s*["']?([^"'>]+)/i.exec(tag)?.[1].toLowerCase() ?? '';
-    const href = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag);
-    const value = href?.[1] ?? href?.[2] ?? href?.[3];
+  for (const link of headLinks(html)) {
+    const rel = link.get('rel')?.toLowerCase() ?? '';
+    const value = link.get('href')?.trim();
     if (!value || !/(?:^|\s)(?:icon|shortcut icon|apple-touch-icon)(?:\s|$)/.test(rel) || /\.svg(?:[?#]|$)/i.test(value)) continue;
     try { links.push({ href: new URL(value, fetched.url).href, touch: rel.includes('apple-touch-icon') }); } catch { /* 読めないURLは飛ばす */ }
   }

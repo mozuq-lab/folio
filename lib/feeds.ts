@@ -1,6 +1,8 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import type { Article, Feed } from './types.ts';
 import { tagTopics } from './topics.ts';
+import { HTML_HEAD_BYTES, decodeEntities } from './html-head.ts';
+import { readPrefixBytes } from './http.ts';
 
 const MAX_BYTES = 2 * 1024 * 1024;
 // Upper bound per feed; most feeds publish far fewer items. Fetched articles go to the D1 backlog (folio_articles), not the sync document.
@@ -74,15 +76,6 @@ function rawText(value: unknown): string {
     return Object.entries(value).filter(([key]) => !key.startsWith('@_')).map(([, child]) => rawText(child)).join(' ');
   }
   return '';
-}
-
-function decodeEntities(value: string): string {
-  const entities: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
-  return value.replace(/&(#x[\da-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi, (entity, code: string) => {
-    if (code[0] !== '#') return entities[code.toLowerCase()] ?? entity;
-    const number = code[1].toLowerCase() === 'x' ? Number.parseInt(code.slice(2), 16) : Number.parseInt(code.slice(1), 10);
-    return number > 0 && number <= 0x10ffff && !(number >= 0xd800 && number <= 0xdfff) ? String.fromCodePoint(number) : '';
-  });
 }
 
 function plainText(value: unknown, maxLength = 600): string {
@@ -237,10 +230,37 @@ export async function fetchFeed(feedUrl: string, fetcher: typeof fetch = fetch):
   return result.feed;
 }
 
-export async function fetchFeedConditional(
+/** 追加の経路で、URLがHTMLページを返したときの結果。先頭の HTML_HEAD_BYTES だけを読み、転送後の最終URLを添える。 */
+export type FeedPage = { status: 'page'; html: string; url: string };
+
+export function fetchFeedConditional(
   feedUrl: string,
   options: { etag?: string | null; lastModified?: string | null; fetcher?: typeof fetch } = {},
 ): Promise<FeedFetchResult> {
+  // 定期取得と更新の経路。フィードのURLがHTMLを返したら失敗にする（ページの中のフィードは探さない）。
+  return requestFeed(feedUrl, options, false) as Promise<FeedFetchResult>;
+}
+
+/**
+ * フィードの追加の経路だけで使う。フィードならその内容を、HTMLページならページの先頭と最終URLを返す。
+ * ページは1回だけ取得し、フィードの発見（lib/feed-discovery.ts）はこの結果を使う。
+ */
+export async function fetchFeedOrPage(feedUrl: string, fetcher: typeof fetch = fetch): Promise<{ status: 'ok'; feed: ParsedFeed } | FeedPage> {
+  const result = await requestFeed(feedUrl, { fetcher }, true);
+  if (result.status === 'not-modified') throw new FeedError('配信元からRSSを取得できませんでした（HTTP 304）。', 502, 'http');
+  return result.status === 'page' ? result : { status: 'ok', feed: result.feed };
+}
+
+function htmlDecoder(contentType: string): TextDecoder {
+  const charset = /;\s*charset\s*=\s*"?([^";\s]+)/i.exec(contentType)?.[1];
+  try { return new TextDecoder(charset || 'utf-8'); } catch { return new TextDecoder(); }
+}
+
+async function requestFeed(
+  feedUrl: string,
+  options: { etag?: string | null; lastModified?: string | null; fetcher?: typeof fetch },
+  acceptPage: boolean,
+): Promise<FeedFetchResult | FeedPage> {
   const fetcher = options.fetcher ?? fetch;
   const headers: Record<string, string> = { Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1' };
   if (options.etag) headers['If-None-Match'] = options.etag;
@@ -271,7 +291,9 @@ export async function fetchFeedConditional(
         await response.body?.cancel();
         throw new FeedError(`配信元からRSSを取得できませんでした（HTTP ${response.status}）。`, 502, 'http');
       }
-      if (/text\/html|application\/xhtml\+xml/i.test(response.headers.get('content-type') ?? '')) {
+      const contentType = response.headers.get('content-type') ?? '';
+      if (/text\/html|application\/xhtml\+xml/i.test(contentType)) {
+        if (acceptPage) return { status: 'page', html: htmlDecoder(contentType).decode(await readPrefixBytes(response.body, HTML_HEAD_BYTES)), url: currentUrl };
         await response.body?.cancel();
         throw new FeedError('HTMLページではなく、RSS / AtomのURLを入力してください。');
       }

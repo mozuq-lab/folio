@@ -1,0 +1,12 @@
+/* フィードの追加で、ページに複数のフィードの指定があったときの候補（OPMLのプレビューに合わせる） */
+.feed-candidates{background:var(--n-50);border:1px solid var(--n-200);border-radius:7px;padding:15px;margin-top:14px}
+.feed-candidates>p{font-size:12px;line-height:1.8;color:var(--n-600)}
+.feed-candidates ul{list-style:none;padding:0;margin:10px 0 0}
+.feed-candidates li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.feed-candidate-text{display:flex;flex-direction:column;gap:3px;min-width:0}
+.feed-candidate-text>span{font-size:12px;color:var(--ink);overflow-wrap:anywhere}
+.feed-candidate-text>small{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.feed-candidates li>.secondary-button{font-size:11px;padding:7px 11px;gap:5px}
+.feed-candidate-status{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);white-space:nowrap}
+.feed-candidates-footer{display:flex;justify-content:flex-end;margin-top:10px}
+.feed-candidates-footer>.text-link{font-size:11px}
