@@ -64,7 +64,6 @@ export function DigestView(props: FeaturePanelProps) {
     } catch (error) { setError(errorMessage(error)); } finally { setPending(false); }
   }
   return <div className="fi-panel">
-    <div className="fi-banner"><span className="fi-banner-icon"><Clock3 size={25} /></span><div><span className="fi-eyebrow">A LITTLE TIME, A NEW PERSPECTIVE</span><h2>今日の「読む」を、ひとまとまりに。</h2><p>空いた時間に収まる未読記事を、概要と出典から選べます。</p></div></div>
     <div className="fi-toolbar"><div className="fi-segment" role="group" aria-label="読書プランの時間">{[5, 10, 15].map(minutes => <button key={minutes} type="button" aria-pressed={budget === minutes} onClick={() => setIntelligence(current => ({ ...current, digestMinutes: minutes }))}>{minutes}分</button>)}</div>
       {aiAvailable && <button className="fi-button fi-primary" type="button" disabled={aiBusy || pending || !unread.length} onClick={generate}>{pending ? <LoaderCircle className="spin" size={16} /> : <Sparkles size={16} />}{pending ? '要約を作成中…' : 'AIで要約する'}</button>}</div>
     <AIStatus available={aiAvailable} label={props.aiLabel} /><ErrorNotice message={error} />
@@ -123,7 +122,7 @@ export function NotebookView(props: FeaturePanelProps) {
 export function ExploreView(props: FeaturePanelProps) {
   const { reader, intelligence, setIntelligence, onOpen, onSave, onFeedback } = props;
   const articles = useMemo(() => selectExploration(reader.articles, reader.preferences, reader.feedback, 18, reader.read), [reader.articles, reader.preferences, reader.feedback, reader.read]);
-  return <div className="fi-panel"><div className="fi-banner"><span className="fi-banner-icon"><Compass size={27} /></span><div><span className="fi-eyebrow">BEYOND YOUR USUAL FEED</span><h2>いつもの関心の、少し外へ。</h2><p>まだ読んでいない分野や、違う媒体の視点に出会うための場所です。</p></div></div>
+  return <div className="fi-panel">
     <section className="fi-card fi-exploration-setting"><div className="fi-heading"><label className="fi-label" htmlFor="fi-exploration-ratio">おすすめに混ぜる探索記事の割合</label><strong>{intelligence.exploration}%</strong></div><input id="fi-exploration-ratio" type="range" min={0} max={50} step={5} value={intelligence.exploration} onChange={event => setIntelligence(current => ({ ...current, exploration: Number(event.target.value) }))} /><div className="fi-range-labels"><span>いつもの関心を中心に</span><span>新しい分野を多めに</span></div><p className="fi-help">「多様性」は媒体の偏りを調整する設定です。探索は、関心に登録していない分野をおすすめに加えます。</p></section>
     <div className="fi-section-title"><Compass size={18} /><h2>新しい視点を見つける</h2><span>{articles.length}記事</span></div>
     {!articles.length && <Empty>探索できる未読記事がありません。いつもと違う分野のフィードを追加すると、新しい記事に出会えます。</Empty>}
