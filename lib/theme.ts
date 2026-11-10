@@ -9,6 +9,11 @@ export function parseTheme(raw: string | null): ThemePreference {
   return raw === 'system' || raw === 'light' || raw === 'dark' ? raw : DEFAULT_THEME;
 }
 
+/** The palette to show. A choice that could not be saved (storage full or blocked) wins over an older stored value for this tab. */
+export function currentTheme(stored: string | null, unsaved: ThemePreference | null): ThemePreference {
+  return unsaved ?? parseTheme(stored);
+}
+
 /** The value of `data-theme` on <html>. `null` leaves the choice to the CSS `prefers-color-scheme` query. */
 export function themeAttribute(theme: ThemePreference): 'light' | 'dark' | null {
   return theme === 'system' ? null : theme;

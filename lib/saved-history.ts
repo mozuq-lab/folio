@@ -1,29 +1,40 @@
-import { RETENTION_DAYS } from './backlog/constants.ts';
+import { retainArticle } from './backlog/migration.ts';
 import type { Article, ReaderState } from './types.ts';
 
 // 「あとで読む」に入れたことのある記事の記録と、フィードごとの集計。どれも純粋関数。
 // 同期データの saved は今保存している記事だけなので、解除した記事も数えられるように記録を別に持つ。
 
-/** 記録の上限。超えた分は古いものから捨てる（同期データを太らせない）。 */
+/**
+ * 記録の上限。超えた分は古いものから捨てる（同期データを太らせない。3,000件で約180KiB）。
+ * 日数では捨てない。取得から90日で消えた記事も、フィードに載り続けていれば同じIDで入り直すので、
+ * 「古い記録の記事はもう端末に無い」とは言えない。
+ * 同期データの検証（lib/cloud-library.ts）も同じ値を使う。値を下げるときは、検証の上限は下げないこと
+ * （すでに保存された文書が読めなくなる）。
+ */
 export const MAX_EVER_SAVED = 3000;
-// 数えるのは端末にためている記事（取得から RETENTION_DAYS 日）だけなので、それより古い記録は使わない。
-// 端末の記事が消えるのが少し遅れても数え落とさないよう、余裕を持たせて残す。
-const KEEP_DAYS = RETENTION_DAYS + 7;
 
 export type FeedStat = { arrived: number; saved: number };
 
 /**
- * 記事を「あとで読む」に入れたことを記録する。保存するときと解除するときの両方で呼ぶ
- * （この記録が無いころに保存した記事も、解除したときに残せる）。
- * 記事ごとに1件で、すでにあれば同じ reader を返す。足すときに、古い記録と上限を超えた分を捨てる。
+ * 記事を「あとで読む」に入れたことを記録する。記事ごとに1件で、すでにあれば同じ reader を返す。
+ * at は最初に記録した日時（並びは記録した順で、上限を超えたら先頭から捨てる）。
  */
 export function recordEverSaved(reader: ReaderState, articleId: string, now: Date): ReaderState {
   const current = reader.everSaved ?? [];
   if (current.some(entry => entry.id === articleId)) return reader;
-  const cutoff = now.getTime() - KEEP_DAYS * 86400000;
-  const kept = current.filter(entry => Date.parse(entry.at) >= cutoff);
-  kept.push({ id: articleId, at: now.toISOString() });
-  return { ...reader, everSaved: kept.slice(-MAX_EVER_SAVED) };
+  return { ...reader, everSaved: [...current, { id: articleId, at: now.toISOString() }].slice(-MAX_EVER_SAVED) };
+}
+
+/**
+ * 記事を「あとで読む」に保存する（save が true）か、保存を解除する（false）。
+ * 保存するときは記事の本体を同期データへ写す。保存するときも解除するときも記録を残す
+ * （記録が無いころに保存した記事も、解除したときに残せる）。
+ */
+export function setSaved(reader: ReaderState, article: Article, save: boolean, now: Date): ReaderState {
+  const next = save
+    ? retainArticle(reader.saved.includes(article.id) ? reader : { ...reader, saved: [...reader.saved, article.id] }, article)
+    : { ...reader, saved: reader.saved.filter(id => id !== article.id) };
+  return recordEverSaved(next, article.id, now);
 }
 
 /**

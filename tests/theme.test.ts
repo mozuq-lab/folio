@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DEFAULT_THEME, THEME_KEY, THEME_PREFERENCES, parseTheme, themeAttribute, themeInitScript } from '../lib/theme.ts';
+import { DEFAULT_THEME, THEME_KEY, THEME_PREFERENCES, currentTheme, parseTheme, themeAttribute, themeInitScript } from '../lib/theme.ts';
 
 test('保存済みの配色を読み取り、不明な値や未保存は既定の「端末の設定に合わせる」にする', () => {
   assert.equal(THEME_KEY, 'folio.theme');
@@ -41,4 +41,24 @@ test('ダークの配色は、端末の設定とdata-themeの指定で同じ値�
   assert.equal(system, manual);
   assert.match(system, /color-scheme:dark/);
   assert.match(css, /:root\{color-scheme:light;/);
+});
+
+test('保存できなかった選択は、保存済みの古い値より優先する', () => {
+  // 保存に失敗したとき（容量超過など）：画面は選んだ配色になっているので、選択中の表示もそれに合わせる。
+  assert.equal(currentTheme('dark', 'light'), 'light');
+  assert.equal(currentTheme(null, 'dark'), 'dark');
+  assert.equal(currentTheme('dark', 'system'), 'system');
+  // 保存できているときは、保存済みの値を使う。
+  assert.equal(currentTheme('dark', null), 'dark');
+  assert.equal(currentTheme('sepia', null), 'system');
+});
+
+test('モーダルの背後の幕と選択中の配色は、変数や画面のスクリプトが使えなくても表示できる', () => {
+  const css = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
+  // 古いブラウザーでは ::backdrop が :root の変数を受け継がないので、予備の値を書いておく。
+  assert.match(css, /\.modal::backdrop\{background:var\(--backdrop,rgba\(29,36,51,0\.349\)\)/);
+  // 選択中のボタンは <html data-theme> から決める（3つの値すべてに規則がある）。
+  const switcher = readFileSync(new URL('../components/folio/theme-switcher.css', import.meta.url), 'utf8');
+  assert.match(switcher, /:root:not\(\[data-theme\]\) \.theme-options>button\[data-theme-value=system\]/);
+  for (const value of ['light', 'dark']) assert.ok(switcher.includes(`:root[data-theme=${value}] .theme-options>button[data-theme-value=${value}]`), value);
 });

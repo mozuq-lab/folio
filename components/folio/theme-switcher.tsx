@@ -16,8 +16,9 @@ export function ThemeSwitcher() {
   const [theme, setTheme] = useTheme();
   return <div className="theme-switcher" role="group" aria-labelledby="theme-switcher-label">
     <span className="theme-switcher-label" id="theme-switcher-label">配色</span>
-    <div className="theme-options">{OPTIONS.map(({ value, label, detail, Icon }) => <button key={value} type="button" className={theme === value ? 'active' : undefined} aria-pressed={theme === value} title={detail ?? label} onClick={() => setTheme(value)}>
-      <Icon size={13} aria-hidden="true"/><span>{label}</span>{detail && <span className="visually-hidden">（{detail}）</span>}
+    {/* 選択中の見た目は data-theme-value と <html data-theme> の組み合わせでCSSが決める（theme-switcher.css）。 */}
+    <div className="theme-options">{OPTIONS.map(({ value, label, detail, Icon }) => <button key={value} type="button" data-theme-value={value} aria-pressed={theme === value} title={detail ?? label} onClick={() => setTheme(value)}>
+      <Icon size={13} aria-hidden="true"/><span>{label}</span>
     </button>)}</div>
   </div>;
 }

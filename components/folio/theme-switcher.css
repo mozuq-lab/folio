@@ -4,6 +4,7 @@
 .theme-options{display:flex;flex:1;gap:2px;padding:2px;border:1px solid var(--sidebar-line);border-radius:7px;background:var(--sidebar-well)}
 .theme-options>button{display:flex;flex:1;align-items:center;justify-content:center;gap:4px;min-height:28px;padding:4px 6px;border-radius:5px;font-size:11px;color:var(--sidebar-ink);white-space:nowrap}
 .theme-options>button:hover{background:var(--sidebar-hover);color:#fff}
-.theme-options>button.active{background:var(--sidebar-active);color:#fff}
+/* 選択中の見た目は <html data-theme> から決める。再読み込みの直後（画面のスクリプトが動く前）から、表示中の配色と同じボタンを選択中に見せる。 */
+:root:not([data-theme]) .theme-options>button[data-theme-value=system],:root[data-theme=light] .theme-options>button[data-theme-value=light],:root[data-theme=dark] .theme-options>button[data-theme-value=dark]{background:var(--sidebar-active);color:#fff;font-weight:600;box-shadow:inset 0 0 0 1px var(--sidebar-muted)}
 .theme-options>button:focus-visible{outline:2px solid var(--sidebar-focus);outline-offset:1px}
 @media(max-width:760px){.theme-options>button{min-height:32px}}

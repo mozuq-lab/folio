@@ -7,8 +7,8 @@ const CACHE_TTL = 5 * 60 * 1000;
 const cache = new Map<string, { expiresAt: number; result: FeedLookup }>();
 
 /**
- * GET /api/feeds?url=… はフィードを返す。url がサイトのページなら、ページに書かれたフィードを探す（lib/feed-discovery.ts）。
- * 候補が2つ以上なら { page, candidates } を返す。候補から選んだURLは discover=0 を付けて送り、ページとしては探さない。
+ * GET /api/feeds?url=… はフィードを返す。discover=1 が付いていて url がサイトのページなら、ページに書かれたフィードを探す（lib/feed-discovery.ts）。
+ * 候補が2つ以上なら { page, candidates } を返す。候補から選んだURLは discover を付けずに送り、ページとしては探さない。
  */
 export async function GET(request: Request): Promise<Response> {
   if (!isSameOrigin(request)) {
@@ -18,7 +18,8 @@ export async function GET(request: Request): Promise<Response> {
   const requestUrl = new URL(request.url);
   const rawUrl = requestUrl.searchParams.get('url')?.trim() ?? '';
   if (!isSafeFeedUrl(rawUrl)) return Response.json({ error: '公開されたHTTPSのURLを入力してください。' }, { status: 400 });
-  const discover = requestUrl.searchParams.get('discover') !== '0';
+  // ページを探すのは discover=1 を付けたときだけ。付けない要求（候補から選んだURLと、配置の前から開いている古い画面）には今までどおりの形で返す。
+  const discover = requestUrl.searchParams.get('discover') === '1';
   const url = new URL(rawUrl);
   url.hash = '';
   const cacheKey = `${discover ? 'discover' : 'feed'} ${url.href}`;
