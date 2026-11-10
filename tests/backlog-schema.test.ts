@@ -11,6 +11,7 @@ test('バックログ用のテーブルが仕様どおりの列を持つ', () =>
   assert.deepEqual(columns(db, 'folio_feeds'), ['user_id', 'feed_id', 'url', 'name', 'priority']);
   assert.deepEqual(columns(db, 'folio_users'), ['user_id', 'email', 'last_seen_at']);
   assert.deepEqual(columns(db, 'folio_feed_state'), ['user_id', 'feed_id', 'last_fetched_at', 'etag', 'last_modified', 'last_error']);
+  assert.deepEqual(columns(db, 'folio_expired'), ['user_id', 'article_id', 'url', 'expired_at']);
 });
 
 test('同じ利用者で同じURLの記事は2行目を入れられない', () => {

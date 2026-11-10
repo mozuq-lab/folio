@@ -58,3 +58,15 @@ export const folioFeedState = sqliteTable('folio_feed_state', {
   lastModified: text('last_modified'),
   lastError: text('last_error'),
 }, table => [primaryKey({columns:[table.userId,table.feedId]})]);
+
+// 期限切れで消した記事の印。フィードに載り続けている記事を、同じIDで未読として取り込み直さないために残す（lib/backlog/store.ts）。
+export const folioExpired = sqliteTable('folio_expired', {
+  userId: text('user_id').notNull(),
+  articleId: text('article_id').notNull(),
+  url: text('url').notNull(),
+  expiredAt: text('expired_at').notNull(),
+}, table => [
+  primaryKey({columns:[table.userId,table.articleId]}),
+  index('folio_expired_user_url_idx').on(table.userId,table.url),
+  index('folio_expired_expired_at_idx').on(table.expiredAt),
+]);

@@ -201,3 +201,60 @@ test('取り込みの既読は、記事の無い既読IDでもサーバーの行
   assert.deepEqual(result, { inserted: 0, markedRead: 100 });
   assert.equal((await listChanges(db, 'u2', null)).entries[0].readAt, null);
 });
+
+const marks = (db: ReturnType<typeof createTestD1>) => db.sqlite.prepare('SELECT user_id, article_id, url, expired_at FROM folio_expired ORDER BY user_id, article_id').all() as { user_id: string; article_id: string; url: string; expired_at: string }[];
+
+test('期限切れで消した記事は、フィードに載り続けていても未読として取り込み直さない', async () => {
+  const db = createTestD1();
+  await insertArticles(db, 'u1', 'f1', [article('a'), article('b')], ago(100));
+  await setRead(db, 'u1', ['a'], true, ago(99));
+  assert.equal(await purgeExpired(db, NOW), 2);
+  assert.deepEqual(marks(db).map(m => [m.article_id, m.url, m.expired_at]), [['a', 'https://example.com/a', NOW.toISOString()], ['b', 'https://example.com/b', NOW.toISOString()]]);
+  const { cursor } = await drain(db, 'u1', 10);
+  // 次の取得で同じ記事（IDが同じもの・IDが変わってもURLが同じもの）が届いても入らない。新しい記事だけが入る。
+  assert.equal(await insertArticles(db, 'u1', 'f1', [article('a'), article('b2', { url: 'https://example.com/b' }), article('c')], NOW), 1);
+  const page = await listChanges(db, 'u1', cursor);
+  assert.deepEqual(page.entries.map(e => e.article.id), ['c']);
+  // 古いバックアップの取り込みでも入れ直さない。
+  assert.deepEqual(await importArticles(db, 'u1', [article('a')], ['a'], NOW), { inserted: 0, markedRead: 0 });
+});
+
+test('期限切れの印は利用者ごとで、ほかの利用者の同じ記事は取り込める', async () => {
+  const db = createTestD1();
+  await insertArticles(db, 'u1', 'f1', [article('a')], ago(100));
+  await purgeExpired(db, NOW);
+  assert.equal(await insertArticles(db, 'u2', 'f1', [article('a')], NOW), 1);
+});
+
+test('期限切れの印は365日で消え、消えたあとは取り込める', async () => {
+  const db = createTestD1();
+  await insertArticles(db, 'u1', 'f1', [article('a')], ago(460));
+  await insertArticles(db, 'u1', 'f1', [article('b')], ago(456));
+  assert.equal(await purgeExpired(db, ago(366)), 1);
+  assert.equal(await purgeExpired(db, ago(364)), 1);
+  assert.equal(await insertArticles(db, 'u1', 'f1', [article('a'), article('b')], ago(300)), 0);
+  // 今日の削除で、365日を過ぎた a の印だけが消える。
+  await purgeExpired(db, NOW);
+  assert.deepEqual(marks(db).map(m => m.article_id), ['b']);
+  assert.equal(await insertArticles(db, 'u1', 'f1', [article('a'), article('b')], NOW), 1);
+});
+
+test('期限切れの印は、limitで消さなかった記事には付けない', async () => {
+  const db = createTestD1();
+  await insertArticles(db, 'u1', 'f1', many(10), ago(100));
+  assert.equal(await purgeExpired(db, NOW, 4), 4);
+  const marked = marks(db).map(m => m.article_id);
+  const left = (db.sqlite.prepare('SELECT article_id FROM folio_articles').all() as { article_id: string }[]).map(r => r.article_id);
+  assert.equal(marked.length, 4);
+  assert.equal(left.length, 6);
+  assert.ok(!left.some(id => marked.includes(id)));
+});
+
+test('取り込み直した記事がもう一度期限切れになっても、印を書き直せる', async () => {
+  const db = createTestD1();
+  // 印より後に入った行（印が書かれる前から取り込みが進んでいた場合など）がもう一度消えても、batchが失敗しない。
+  await insertArticles(db, 'u1', 'f1', [article('a')], ago(100));
+  db.sqlite.prepare("INSERT INTO folio_expired (user_id, article_id, url, expired_at) VALUES ('u1', 'a', 'https://example.com/old-url', ?)").run(ago(200).toISOString());
+  assert.equal(await purgeExpired(db, NOW), 1);
+  assert.deepEqual(marks(db).map(m => [m.article_id, m.url, m.expired_at]), [['a', 'https://example.com/a', NOW.toISOString()]]);
+});

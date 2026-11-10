@@ -61,7 +61,7 @@ npm run cloudflare:deploy
 
 ## 定期取得（Cron Trigger）
 
-デプロイすると、`*/5 * * * *` のCron Triggerが設定に自動で入ります。追加の操作は不要です。5分ごとに、優先フィード1件と通常フィード1件を取得してD1にためます。外部から起動するHTTPの入口はありません。対象は、直近90日以内にFolioを開いた `allowedEmails` の利用者です。記事は90日保持し、削除はUTC 03:00〜03:04の実行時に1日1回です。D1のmigration（`0002`・`0003` を含む）は `cloudflare:bootstrap`／`cloudflare:db:migrate` で適用します。
+デプロイすると、`*/5 * * * *` のCron Triggerが設定に自動で入ります。追加の操作は不要です。5分ごとに、優先フィード1件と通常フィード1件を取得してD1にためます。外部から起動するHTTPの入口はありません。対象は、直近90日以内にFolioを開いた `allowedEmails` の利用者です。記事は90日保持し、削除はUTC 03:00〜03:04の実行時に1日1回です。削除した記事は、IDとURLを1年間残して取り込み直さないようにします。D1のmigration（`0002`〜`0004` を含む）は `cloudflare:bootstrap`／`cloudflare:db:migrate` で適用します。
 
 ### 無料プランの制限
 
