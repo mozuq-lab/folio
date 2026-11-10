@@ -22,7 +22,7 @@
 .article-actions .icon-button{min-height:28px;min-width:28px}
 .article-card:not(.article-compact) .article-footer{flex-wrap:wrap;row-gap:6px}
 .article-card:not(.article-compact) .article-actions{flex-wrap:wrap;justify-content:flex-end;max-width:100%;margin-left:auto}
-.compact-match{display:none}
+.compact-time{display:none}.compact-match{display:none}
 .drawer-reading-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0}
 .drawer-reading-controls>span{display:flex;align-items:center;gap:5px;color:var(--accent);font-size:12px}
 .drawer-reading-controls .secondary-button{padding:8px 12px}
@@ -39,7 +39,7 @@
 .article-compact .article-title-button h3{display:block;min-height:0;white-space:nowrap;text-overflow:ellipsis;font-size:13px;line-height:1.6;letter-spacing:0}
 .article-compact .article-footer{margin:0;padding:0;border:0;min-height:0}
 .article-compact .article-actions{gap:3px}
-.article-compact .compact-match{display:inline-flex;align-items:center;gap:3px;margin-right:4px;color:var(--n-600);font-size:10px}
+.article-compact .compact-time{display:inline;margin-right:6px;color:var(--n-500);font-size:10px;white-space:nowrap;font-variant-numeric:tabular-nums}.article-compact .compact-match{display:inline-flex;align-items:center;gap:3px;margin-right:4px;color:var(--n-600);font-size:10px}
 .article-compact .article-actions .like-button{display:none}
 .article-compact .article-actions .icon-button{height:30px;width:30px}
 .article-compact .article-actions .article-source-link{width:auto}

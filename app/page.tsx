@@ -84,6 +84,7 @@ function ArticleCard({article,index,feed,saved,read,liked,onOpen,onSave,onFeedba
    <div className="article-footer">
     <div className="article-tags">{article.isExploration&&<span className="exploration-label">新しい視点</span>}{article.tags.slice(0,2).map(t=><span key={t}>{t}</span>)}</div>
     <div className="article-actions">
+     <time className="compact-time" dateTime={article.publishedAt}>{relativeTime(article.publishedAt)}</time>
      <span className="compact-match" title={lens==='importance'?'重要度':'関心度'}><Sparkles size={12}/><strong>{score}</strong></span>
      <span className="reading-time">{article.readingMinutes}分</span>
      <button className={`icon-button like-button ${liked?'active':''}`} aria-label={`${article.title}に興味あり`} aria-pressed={liked} onClick={()=>onFeedback('like')}><ThumbsUp size={15}/></button>
