@@ -36,6 +36,11 @@ test('セキュリティ・投資・マネー・ゲームの規則は、単語�
   // stock を含む単語（stockholm など）や game を含む単語（endgame は除く）に当てはめない。
   assert.ok(!tagTopics('Stockholm travel guide').includes('投資・マネー'));
   assert.ok(!tagTopics('A gamechanger for teams').includes('ゲーム'));
+  // マネージャー・マネージメントは投資・マネーにしない。フィッシングは詐欺などのときだけ。
+  assert.ok(!tagTopics('プロダクトマネージャーの仕事術').includes('投資・マネー'));
+  assert.ok(tagTopics('マネーの基本').includes('投資・マネー'));
+  assert.ok(!tagTopics('週末のフィッシング（釣り）').includes('セキュリティ'));
+  assert.ok(tagTopics('フィッシング詐欺に注意').includes('セキュリティ'));
 });
 
 test('一覧の上のタブ：選んでいなければ既定の5つ、選んだら候補の順で表示し、候補にないものは出さない', () => {
