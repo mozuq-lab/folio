@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { MAX_CANDIDATES, MAX_CANDIDATE_TITLE, NO_FEED_LINK_MESSAGE, findFeedLinks, lookupFeed } from '../lib/feed-discovery.ts';
-import { feedLookupPath, isSubscribed, parseFeedAddResponse } from '../lib/feed-add.ts';
+import { feedLookupPath, isSubscribed, parseFeedAddResponse, subscribeFeed } from '../lib/feed-add.ts';
 import { FeedError, fetchFeed, fetchFeedConditional } from '../lib/feeds.ts';
-import { HTML_HEAD_BYTES, headLinks } from '../lib/html-head.ts';
+import { HTML_HEAD_BYTES, decodeEntities, headLinks } from '../lib/html-head.ts';
+import type { ReaderState } from '../lib/types.ts';
 import { GET as routeGET } from '../app/api/feeds/route.ts';
 import { runWithUser } from '../lib/auth/context.ts';
 
@@ -23,6 +24,7 @@ function fetcherOf(routes: Route) {
   return { fetcher, calls };
 }
 const link = (attributes: string) => `<link ${attributes}>`;
+const rssLink = (href: string) => link(`rel="alternate" type="application/rss+xml" href="${href}"`);
 
 test('findFeedLinks: rel=alternate でRSS / Atomの型のlinkだけを候補にし、titleとURLを返す', () => {
   const head = [
@@ -218,7 +220,7 @@ async function withGlobalFetch<T>(routes: Route, run: (calls: string[]) => Promi
   try { return await run(calls); } finally { globalThis.fetch = original; }
 }
 
-test('APIはサイトのURLから候補を返し、discover=0ではページを探さない', async () => {
+test('APIは discover=1 のときだけサイトのURLから候補を返し、付けない要求（候補から選んだURL・古い画面）ではページを探さない', async () => {
   const site = 'https://route.example.com/';
   const head = link('rel="alternate" type="application/rss+xml" title="RSS" href="/rss.xml"') + link('rel="alternate" type="application/atom+xml" title="Atom" href="/atom.xml"');
   await withGlobalFetch({ [site]: html(page(head)), 'https://route.example.com/rss.xml': xml() }, async calls => {
@@ -259,6 +261,112 @@ test('parseFeedAddResponse: フィード・候補・エラーを見分け、形�
 test('isSubscribed と feedLookupPath', () => {
   assert.equal(isSubscribed([{ url: 'https://example.com/feed.xml' }], 'https://example.com/feed.xml'), true);
   assert.equal(isSubscribed([{ url: 'https://example.com/feed.xml' }], 'https://example.com/other.xml'), false);
-  assert.equal(feedLookupPath('https://example.com/?a=1&b=2'), '/api/feeds?url=https%3A%2F%2Fexample.com%2F%3Fa%3D1%26b%3D2');
-  assert.equal(feedLookupPath('https://example.com/feed.xml', false), '/api/feeds?url=https%3A%2F%2Fexample.com%2Ffeed.xml&discover=0');
+  assert.equal(feedLookupPath('https://example.com/?a=1&b=2'), '/api/feeds?url=https%3A%2F%2Fexample.com%2F%3Fa%3D1%26b%3D2&discover=1');
+  assert.equal(feedLookupPath('https://example.com/feed.xml', false), '/api/feeds?url=https%3A%2F%2Fexample.com%2Ffeed.xml');
+});
+
+test('headLinks: ほかのタグの属性値の中に書かれた <link> は候補にしない', () => {
+  const injected = '<link rel=alternate type=application/rss+xml title=Injected href=https://attacker.example/feed.xml>';
+  const head = `<meta property="og:description" content="本文 ${injected} の続き"><meta name=description content='${injected}'>${rssLink('/real.xml')}`;
+  assert.deepEqual(findFeedLinks(page(head), PAGE).map(c => c.url), ['https://example.com/real.xml']);
+});
+
+test('headLinks: 属性値の中の </head>・<script・<!--・<!DOCTYPE では読むのをやめない', () => {
+  for (const content of ['HTMLの </head> の話', '<script の話', '<!-- の書き方', '<title の付け方', '<!DOCTYPE html "']) {
+    const head = `<meta name="description" content="${content}">${rssLink('/after.xml')}`;
+    assert.deepEqual(findFeedLinks(page(head), PAGE).map(c => c.url), ['https://example.com/after.xml'], content);
+  }
+  // <!DOCTYPE …> の中の文字もタグとして読まない。
+  assert.deepEqual(findFeedLinks(`<!DOCTYPE html SYSTEM "<link rel=alternate type=application/rss+xml href=/doctype.xml>"><head>${rssLink('/after.xml')}</head>`, PAGE).map(c => c.url), ['https://example.com/after.xml']);
+});
+
+test('headLinks: 余分な引用符や、引用符なしの値の中の引用符があっても、後ろの link を失わない', () => {
+  // ブラウザーと同じく、引用符が値の区切りになるのは = の直後だけ。
+  const extraQuote = `<link rel="stylesheet" href="/a.css"">${rssLink('/after.xml')}`;
+  assert.deepEqual(findFeedLinks(page(extraQuote), PAGE).map(c => c.url), ['https://example.com/after.xml']);
+  const bare = `<link rel=alternate type=application/rss+xml title=Bob's href=/bob.xml>${rssLink('/after.xml')}`;
+  assert.deepEqual(findFeedLinks(page(bare), PAGE), [{ url: 'https://example.com/bob.xml', title: "Bob's" }, { url: 'https://example.com/after.xml', title: '' }]);
+  const [first] = headLinks('<link rel = "icon"  href= /x.png / >');
+  assert.equal(first.get('rel'), 'icon');
+  assert.equal(first.get('href'), '/x.png');
+  // 空のコメント <!--> のあとも読み続ける。
+  assert.equal(headLinks('<!--><link rel=icon href=/a.png>').length, 1);
+});
+
+test('headLinks: hreflang などの link が100個を超えて並んでいても、後ろの指定を読む', () => {
+  const many = Array.from({ length: 180 }, (_, i) => link(`rel="alternate" hreflang="x-${i}" href="https://example.com/${i}/"`)).join('');
+  assert.deepEqual(findFeedLinks(page(many + rssLink('/feed.xml')), PAGE).map(c => c.url), ['https://example.com/feed.xml']);
+  assert.equal(headLinks(many + link('rel="icon" href="/icon.png"')).at(-1)?.get('rel'), 'icon');
+  // 上限はある（1000個まで）。
+  assert.equal(headLinks('<link rel=x>'.repeat(1500)).length, 1000);
+});
+
+test('headLinks: 悪意のある大きな入力でも、時間をかけずに読み終える', () => {
+  const size = HTML_HEAD_BYTES;
+  const inputs = ['<', '<a', '<a ', '<a "', '<a b=', '<link ', '<link a="', '<link a=b ', '<!', '<!-', '<!--', '<?', '<script', '<title>', '</', '<link rel=x>', '<a b="c">', '&amp;'].map(unit => unit.repeat(Math.ceil(size / unit.length)).slice(0, size));
+  inputs.push(`<link title="${'&amp;'.repeat(size / 5 - 20)}">`);
+  const started = performance.now();
+  for (const input of inputs) headLinks(input);
+  // 1件あたり数ミリ秒で終わる。2乗の時間がかかる読み方になっていれば、桁違いに遅くなる。
+  assert.ok(performance.now() - started < 1500, `${Math.round(performance.now() - started)}ms`);
+});
+
+test('decodeEntities: フィードの名前によく出る名前付き文字参照を戻し、知らない名前は残す', () => {
+  assert.equal(decodeEntities('日本語 &raquo; フィード &mdash; A&amp;B &hellip; &copy;2026 &ldquo;x&rdquo;'), '日本語 » フィード — A&B … ©2026 “x”');
+  assert.equal(decodeEntities('&unknown; &#x3042; &#12356;'), '&unknown; あ い');
+  const head = link('rel="alternate" type="application/rss+xml" title="サイト名 &raquo; フィード" href="/feed/"') + link('rel="alternate" type="application/rss+xml" title="サイト名 &raquo; コメントフィード" href="/comments/feed/"');
+  assert.deepEqual(findFeedLinks(page(head), PAGE).map(c => c.title), ['サイト名 » フィード', 'サイト名 » コメントフィード']);
+});
+
+test('lookupFeed: 候補が1つでそのフィードを取得できないときは、取りに行ったフィードのURLを添えて失敗にする', async () => {
+  const head = link('rel="alternate" type="application/rss+xml" href="/feed/"');
+  const missing = fetcherOf({ [PAGE]: html(page(head)) });
+  await assert.rejects(lookupFeed(PAGE, { fetcher: missing.fetcher }), (error: unknown) => {
+    assert.ok(error instanceof FeedError);
+    assert.equal(error.message, 'このページが指定するフィード（https://example.com/feed/）を取得できませんでした。配信元からRSSを取得できませんでした（HTTP 404）。');
+    assert.equal(error.status, 502);
+    assert.equal(error.kind, 'http');
+    return true;
+  });
+  // フィードのURLがHTMLを返す場合（トップへ転送されるサイトなど）。ページとしては探し直さない。
+  const htmlFeed = fetcherOf({ [PAGE]: html(page(head)), 'https://example.com/feed/': html(page(rssLink('/other.xml'))) });
+  await assert.rejects(lookupFeed(PAGE, { fetcher: htmlFeed.fetcher }), /このページが指定するフィード（https:\/\/example\.com\/feed\/）を取得できませんでした。HTMLページではなく/);
+  assert.deepEqual(htmlFeed.calls, [PAGE, 'https://example.com/feed/']);
+});
+
+test('lookupFeed: 候補のフィードが安全でないURLへ転送されたら取得しない', async () => {
+  const head = link('rel="alternate" type="application/rss+xml" href="/feed.xml"');
+  for (const location of ['http://example.com/feed.xml', 'https://127.0.0.1/feed.xml', 'https://169.254.169.254/latest/']) {
+    const { fetcher, calls } = fetcherOf({ [PAGE]: html(page(head)), 'https://example.com/feed.xml': () => new Response(null, { status: 302, headers: { location } }) });
+    await assert.rejects(lookupFeed(PAGE, { fetcher }), FeedError, location);
+    assert.deepEqual(calls, [PAGE, 'https://example.com/feed.xml'], location);
+  }
+});
+
+test('subscribeFeed: 購読一覧と分類に足し、同じURLかIDのフィードがあれば何もしない', () => {
+  const feed = (id: string, url: string, category = '未分類') => ({ id, name: id, url, website: 'https://example.com', category, color: '#000', initial: 'F' });
+  const reader = { version: 1, articles: [], feeds: [feed('feed-1', 'https://example.com/a.xml')], saved: [], read: [], feedback: {}, preferences: { interests: [], mutedTopics: [], topicWeights: {}, sourceWeights: {}, diversity: 50 }, lastUpdated: null, folders: [{ name: 'テック', feedIds: ['feed-1'] }] } as unknown as ReaderState;
+  const added = subscribeFeed(reader, feed('feed-2', 'https://example.com/b.xml', 'テック'));
+  assert.deepEqual(added.feeds.map(f => f.id), ['feed-1', 'feed-2']);
+  assert.deepEqual(added.folders, [{ name: 'テック', feedIds: ['feed-1', 'feed-2'] }]);
+  // 追加の応答が2回届いても2件にしない。
+  assert.equal(subscribeFeed(added, feed('feed-2', 'https://example.com/b.xml', 'テック')), added);
+  assert.equal(subscribeFeed(added, feed('feed-9', 'https://example.com/b.xml')), added);
+  assert.equal(subscribeFeed(added, feed('feed-2', 'https://example.com/other.xml')), added);
+  // 無い分類は作らず、分類の無い同期データには folders を足さない。
+  assert.deepEqual(subscribeFeed(added, feed('feed-3', 'https://example.com/c.xml', '新しい分類')).folders, added.folders);
+  const noFolders = { ...reader, folders: undefined } as ReaderState;
+  assert.equal('folders' in subscribeFeed(noFolders, feed('feed-4', 'https://example.com/d.xml')) && subscribeFeed(noFolders, feed('feed-4', 'https://example.com/d.xml')).folders !== undefined, false);
+});
+
+test('headLinks: 壊れたHTMLでも、ブラウザーと同じところでタグと script を区切る', () => {
+  const urls = (text: string) => findFeedLinks(text, PAGE).map(c => c.url);
+  // script は、名前の次が空白・/・> の終了タグでだけ閉じる。
+  const script = `<head><script>document.write('<script src="/a.js"></script' + '>'); var s = "</head>"; var t = "</scripts>${rssLink('/in-script.xml')}";</script>${rssLink('/feed.xml')}</head>`;
+  assert.deepEqual(urls(script), ['https://example.com/feed.xml']);
+  // <link<link …> は link ではなく、</head<meta> は </head> ではない。
+  assert.deepEqual(urls(`<head><link${rssLink('/glued.xml')}</head<meta>${rssLink('/feed.xml')}</head>`), ['https://example.com/feed.xml']);
+  // 名前の無い終了タグ（</ …>）は > まで読み飛ばす。終了タグの名前は属性として読まない。
+  assert.deepEqual(urls(`<head></ ${rssLink('/bogus.xml')}${rssLink('/feed.xml')}</head>`), ['https://example.com/feed.xml']);
+  assert.deepEqual(urls(`<head></x=">${rssLink('/feed.xml')}</head>`), ['https://example.com/feed.xml']);
 });

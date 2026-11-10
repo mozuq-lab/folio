@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, LoaderCircle, Plus } from 'lucide-react';
 import type { Feed } from '@/lib/types';
 import { feedLookupPath, isSubscribed, parseFeedAddResponse, type FeedCandidate } from '@/lib/feed-add';
@@ -18,16 +18,24 @@ export function FeedAddForm({feeds,onAdd,notice='',onEdit}:{feeds:Feed[];onAdd:(
  // 問い合わせ中のもの。追加欄なら FORM、候補なら候補のURL。
  const [pending,setPending]=useState<string|null>(null);
  const [found,setFound]=useState<{page:string;candidates:FeedCandidate[]}|null>(null);
+ // 追加欄を閉じたら、問い合わせ中の追加をやめる（閉じたあとに届いた応答で購読しない。開き直して同じフィードを2回足さない）。
+ const request=useRef<AbortController|null>(null);
+ useEffect(()=>()=>request.current?.abort(),[]);
  const lookup=async(target:string,discover:boolean,marker:string)=>{
+  const controller=new AbortController();request.current=controller;
   setPending(marker);setError('');
   try{
-   const response=await fetch(feedLookupPath(target,discover));
+   const response=await fetch(feedLookupPath(target,discover),{signal:controller.signal});
    const result=parseFeedAddResponse(response.ok,await response.json().catch(()=>null));
-   if(result.kind==='error')throw new Error(result.message);
+   if(controller.signal.aborted)return;
+   if(result.kind==='error'){setError(result.message);return;}
    if(result.kind==='candidates'){setFound({page:result.page,candidates:result.candidates});return;}
-   if(isSubscribed(feeds,result.feed.url))throw new Error('このフィードはすでに購読しています。');
+   if(isSubscribed(feeds,result.feed.url)){setError('このフィードはすでに購読しています。');return;}
    setUrl('');setFound(null);onAdd(result.feed);
-  }catch(err){setError(err instanceof Error?err.message:'フィードを取得できませんでした。');}finally{setPending(null);}
+  }catch{
+   // 通信そのものの失敗。ブラウザーの英語の文言は出さない。
+   if(!controller.signal.aborted)setError('フィードを取得できませんでした。通信の状態を確かめて、もう一度お試しください。');
+  }finally{if(!controller.signal.aborted)setPending(null);}
  };
  const submit=(e:React.FormEvent)=>{
   e.preventDefault();if(pending!==null)return;setError('');setFound(null);onEdit?.();
@@ -35,8 +43,9 @@ export function FeedAddForm({feeds,onAdd,notice='',onEdit}:{feeds:Feed[];onAdd:(
   if(isSubscribed(feeds,normalized)){setError('このフィードはすでに購読しています。');return;}
   void lookup(normalized,true,FORM);
  };
+ // 問い合わせ中は入力を変えられないようにする（届いた結果が、書き換えたあとの入力と食い違わないように）。
  return <>
-  <form className="feed-form" onSubmit={submit}><label htmlFor="feed-url">サイトまたはフィードのURL</label><div className="feed-input-row"><input id="feed-url" type="url" value={url} onChange={e=>{setUrl(e.target.value);setError('');setFound(null);onEdit?.();}} placeholder="https://example.com/" required/><button className="primary-button" disabled={pending!==null} type="submit">{pending===FORM?<LoaderCircle size={16} className="spin"/>:<Plus size={16}/>}<span>{pending===FORM?'確認中…':'追加する'}</span></button></div>{(error||notice)&&<p className="form-error" role="alert">{error||notice}</p>}</form>
+  <form className="feed-form" onSubmit={submit}><label htmlFor="feed-url">サイトまたはフィードのURL</label><div className="feed-input-row"><input id="feed-url" type="url" value={url} readOnly={pending!==null} onChange={e=>{setUrl(e.target.value);setError('');setFound(null);onEdit?.();}} placeholder="https://example.com/" required/><button className="primary-button" disabled={pending!==null} type="submit">{pending===FORM?<LoaderCircle size={16} className="spin"/>:<Plus size={16}/>}<span>{pending===FORM?'確認中…':'追加する'}</span></button></div>{error&&<p className="form-error" role="alert">{error}</p>}{notice&&<p className="form-error" role="alert">{notice}</p>}</form>
   {found&&<section className="feed-candidates" aria-label="見つかったフィード">
    <p>このページには{found.candidates.length}件のフィードがあります。購読するものを選んでください。</p>
    <ul>{found.candidates.map(candidate=>{const subscribed=isSubscribed(feeds,candidate.url);return <li key={candidate.url}>

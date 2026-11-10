@@ -43,6 +43,7 @@ export function findFeedLinks(html: string, pageUrl: string): FeedCandidate[] {
 /**
  * フィードの追加で入力されたURLを調べる。フィードならそのまま返す。HTMLページなら、同じ応答の先頭からフィードの指定を探す。
  * 候補が1つならそのフィードを取得して返し（購読するURLは見つけたフィードのURL）、2つ以上なら候補を返す。0なら失敗にする。
+ * 候補が1つでそのフィードを取得できなければ、取りに行ったフィードのURLを添えて失敗にする。
  * discover が false のとき（候補から選んだURL）はページを探さず、HTMLなら今までどおり失敗にする。
  */
 export async function lookupFeed(url: string, options: { discover?: boolean; fetcher?: typeof fetch } = {}): Promise<FeedLookup> {
@@ -52,6 +53,13 @@ export async function lookupFeed(url: string, options: { discover?: boolean; fet
   if (result.status === 'ok') return result.feed;
   const candidates = findFeedLinks(result.html, result.url);
   if (!candidates.length) throw new FeedError(NO_FEED_LINK_MESSAGE);
-  if (candidates.length === 1) return fetchFeed(candidates[0].url, fetcher);
-  return { page: result.url, candidates };
+  if (candidates.length > 1) return { page: result.url, candidates };
+  const found = candidates[0].url;
+  try {
+    return await fetchFeed(found, fetcher);
+  } catch (error) {
+    if (!(error instanceof FeedError)) throw error;
+    // 入力されたのはページのURLなので、どのフィードを取りに行って失敗したのかを添える。
+    throw new FeedError(`このページが指定するフィード（${found.length > 200 ? `${found.slice(0, 200)}…` : found}）を取得できませんでした。${error.message}`, error.status, error.kind);
+  }
 }
