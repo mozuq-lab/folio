@@ -9,3 +9,4 @@
 /* 一覧の上の文字を読みやすい大きさに */
 .mark-all-read-button{font-size:12px}
 .mark-all-read-count{font-size:11px}
+@media(max-width:600px){.mark-all-read-button{font-size:11px}.mark-all-read-count{font-size:10px}}
