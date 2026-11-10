@@ -34,7 +34,11 @@ function SourceButton({ article, onOpen }: { article: Article; onOpen: FeaturePa
   return <button type="button" className="fi-source" onClick={() => onOpen(article)}><span>{article.sourceName}</span><span>{article.title}</span><ArrowUpRight size={14} /></button>;
 }
 
-function DigestContent({ digest, articles, onOpen }: { digest: DigestResult; articles: Article[]; onOpen: FeaturePanelProps['onOpen'] }) {
+function SaveButton({ article, saved, onSave }: { article: Article; saved: boolean; onSave: FeaturePanelProps['onSave'] }) {
+  return <button className={`fi-icon-button ${saved ? 'is-active' : ''}`} type="button" aria-label={saved ? `${article.title}の保存を解除` : `${article.title}をあとで読むに保存`} title={saved ? '保存を解除' : 'あとで読むに保存'} aria-pressed={saved} onClick={() => onSave(article)}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /></button>;
+}
+
+function DigestContent({ digest, articles, saved, onOpen, onSave }: { digest: DigestResult; articles: Article[]; saved: string[]; onOpen: FeaturePanelProps['onOpen']; onSave: FeaturePanelProps['onSave'] }) {
   return <section className="fi-card fi-digest-result">
     <div className="fi-heading"><span className="fi-badge">{digest.mode === 'ai' ? 'AIによる要約' : '記事概要の抜粋'}</span><span className="fi-meta"><Clock3 size={14} />合計 {digest.totalMinutes} 分</span></div>
     <h2>{digest.title}</h2><p className="fi-copy">{digest.overview}</p>
@@ -42,13 +46,13 @@ function DigestContent({ digest, articles, onOpen }: { digest: DigestResult; art
       const article = articles.find(article => article.id === item.articleId);
       return <li key={`${item.articleId}-${index}`}><div className="fi-heading"><span className="fi-number">{String(index + 1).padStart(2, '0')}</span><span className="fi-meta">約{item.minutes}分</span></div>
         <h3>{article?.title ?? 'ライブラリにない記事'}</h3><p className="fi-copy">{item.summary}</p>{item.takeaway && <p className="fi-takeaway">{item.takeaway}</p>}
-        {article && <SourceButton article={article} onOpen={onOpen} />}</li>;
+        {article && <div className="fi-digest-source"><SourceButton article={article} onOpen={onOpen} /><SaveButton article={article} saved={saved.includes(article.id)} onSave={onSave} /></div>}</li>;
     })}</ol>
   </section>;
 }
 
 export function DigestView(props: FeaturePanelProps) {
-  const { reader, intelligence, setIntelligence, onOpen, requestAI, aiAvailable, aiBusy } = props;
+  const { reader, intelligence, setIntelligence, onOpen, onSave, requestAI, aiAvailable, aiBusy } = props;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const budget = intelligence.digestMinutes || 5;
@@ -67,9 +71,9 @@ export function DigestView(props: FeaturePanelProps) {
     <div className="fi-toolbar"><div className="fi-segment" role="group" aria-label="読書プランの時間">{[5, 10, 15].map(minutes => <button key={minutes} type="button" aria-pressed={budget === minutes} onClick={() => setIntelligence(current => ({ ...current, digestMinutes: minutes }))}>{minutes}分</button>)}</div>
       {aiAvailable && <button className="fi-button fi-primary" type="button" disabled={aiBusy || pending || !unread.length} onClick={generate}>{pending ? <LoaderCircle className="spin" size={16} /> : <Sparkles size={16} />}{pending ? '要約を作成中…' : 'AIで要約する'}</button>}</div>
     <AIStatus available={aiAvailable} label={props.aiLabel} /><ErrorNotice message={error} />
-    {intelligence.digest && <DigestContent digest={intelligence.digest} articles={reader.articles} onOpen={onOpen} />}
+    {intelligence.digest && <DigestContent digest={intelligence.digest} articles={reader.articles} saved={reader.saved} onOpen={onOpen} onSave={onSave} />}
     <div className="fi-section-title"><BookOpen size={18} /><h2>すぐに読めるプラン</h2><span>AIを使わず作成</span></div>
-    {plan.items.length ? <DigestContent digest={plan} articles={reader.articles} onOpen={onOpen} /> : <Empty>{reader.articles.length ? 'この時間内に読める未読記事がありません。時間を増やすか、新しい記事を取り込んでください。' : 'フィードを追加すると、未読記事から読書プランを作れます。'}</Empty>}
+    {plan.items.length ? <DigestContent digest={plan} articles={reader.articles} saved={reader.saved} onOpen={onOpen} onSave={onSave} /> : <Empty>{reader.articles.length ? 'この時間内に読める未読記事がありません。時間を増やすか、新しい記事を取り込んでください。' : 'フィードを追加すると、未読記事から読書プランを作れます。'}</Empty>}
   </div>;
 }
 
