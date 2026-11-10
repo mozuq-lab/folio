@@ -116,10 +116,24 @@
 .skeleton-card .article-body{display:flex;flex-direction:column;gap:10px;padding-top:14px}.skeleton-line{height:11px;width:100%}.skeleton-line.short{width:40%}
 .feed-nav-skeleton{display:flex;flex-direction:column;gap:14px;padding:8px 12px}.feed-nav-skeleton .skeleton{height:12px;background:rgba(201,209,227,.14);animation:none}
 .skeleton-chips{display:flex;gap:8px;flex-wrap:wrap}.skeleton-chips .skeleton{width:84px;height:26px;border-radius:5px}
-/* データの移行・バックアップ：広い画面では右カラム、右カラムを隠す狭い画面ではサイドバー */
+/* データの移行・バックアップと好みの設定：広い画面では右カラムと上部、それらを隠す狭い画面ではサイドバー */
 .backup-link{display:flex;align-items:center;gap:8px;width:100%;margin-top:18px;padding:12px 14px;border:1px solid var(--n-150);border-radius:8px;background:var(--n-0);font-size:12px;color:var(--n-600);text-align:left}.backup-link span{flex:1}.backup-link:hover{border-color:var(--n-300)}
 .sidebar .nav-item.narrow-only{display:none}
 @media(max-width:1080px){.sidebar .nav-item.narrow-only{display:flex}}
 /* 記事とAIの文字を読みやすく */
 .article-description{color:var(--n-700)}.article-reason{color:var(--n-700)}.article-source{color:var(--n-600)}.article-source>span:nth-child(2){color:var(--n-700)}
 .reading-time{color:var(--n-500)}.results-meta{color:var(--n-600)}.panel-description,.learning-description{color:var(--n-600)}
+/* ヘッダーを詰める（全体のヘッダーと、各画面の見出し） */
+.topbar{height:56px}
+.main-layout{padding-top:20px}
+.page-heading{margin-bottom:14px}
+.date-label{margin-bottom:3px}
+.page-heading h1{line-height:1.3}
+.page-heading p{margin-top:3px}
+.category-tabs{margin:16px 0 18px}
+/* 一覧の上の「最終更新」「すべて既読にする」「未読のみ」を読みやすい大きさに */
+.results-meta{font-size:12px;margin:8px 0 14px}
+.unread-toggle input{width:13px;height:13px}
+/* コンパクト表示の行を少し低く */
+.article-compact .article-body{padding-top:5px;padding-bottom:5px;min-height:42px}
+.article-compact .article-actions .icon-button{height:28px}
