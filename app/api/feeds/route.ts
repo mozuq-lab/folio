@@ -17,7 +17,7 @@ export async function GET(request: Request): Promise<Response> {
   if (!getCurrentUser()) return Response.json({ error: 'RSSの取得にはログインが必要です。' }, { status: 401, headers: NO_STORE_HEADERS });
   const requestUrl = new URL(request.url);
   const rawUrl = requestUrl.searchParams.get('url')?.trim() ?? '';
-  if (!isSafeFeedUrl(rawUrl)) return Response.json({ error: '公開されたHTTPSのURLを入力してください。' }, { status: 400 });
+  if (!isSafeFeedUrl(rawUrl)) return Response.json({ error: '公開されたURL（http:// または https://）を入力してください。' }, { status: 400 });
   // ページを探すのは discover=1 を付けたときだけ。付けない要求（候補から選んだURLと、配置の前から開いている古い画面）には今までどおりの形で返す。
   const discover = requestUrl.searchParams.get('discover') === '1';
   const url = new URL(rawUrl);

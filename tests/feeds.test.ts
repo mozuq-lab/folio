@@ -109,11 +109,13 @@ test('DOCTYPEと外部entity宣言を解析前に拒否する', () => {
   ]) assert.throws(() => parseFeed(xml, 'https://example.com/feed'));
 });
 
-test('公開HTTPS URLを許可し、ローカル宛先・credentials・独自portを拒否する', () => {
+test('公開HTTP(S) URLを許可し、ローカル宛先・credentials・独自portを拒否する', () => {
   assert.equal(isSafeFeedUrl('https://example.com/feed.xml'), true);
+  assert.equal(isSafeFeedUrl('http://example.com/feed'), true);
+  assert.equal(isSafeFeedUrl('http://example.com:80/feed'), true);
   assert.equal(isSafeFeedUrl('https://news.example.co.jp/rss?format=xml'), true);
   for (const url of [
-    'not-a-url', 'http://example.com/feed', 'file:///etc/passwd',
+    'not-a-url', 'ftp://example.com/feed', 'file:///etc/passwd', 'http://localhost/feed', 'http://127.0.0.1/', 'http://10.0.0.1/', 'http://example.com:8080/feed',
     'https://localhost/feed', 'https://LOCALHOST./feed', 'https://api.localhost/feed',
     'https://metadata.google.internal/', 'https://printer.local/', 'https://nas.lan/', 'https://intranet/feed',
     'https://router.home.arpa/', 'https://intranet.corp/',

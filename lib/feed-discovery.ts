@@ -13,7 +13,7 @@ export const NO_FEED_LINK_MESSAGE = 'このページにはRSS / Atomフィード
 
 /**
  * ページの <link rel="alternate" type="application/rss+xml|application/atom+xml" href="..."> を候補にする。
- * href は pageUrl（転送後の最終URL）を基準に解決し、公開HTTPSでないものと、ページ自身を指すものは捨てる。
+ * href は pageUrl（転送後の最終URL）を基準に解決し、公開されたHTTP(S)でないものと、ページ自身を指すものは捨てる。
  */
 export function findFeedLinks(html: string, pageUrl: string): FeedCandidate[] {
   const candidates: FeedCandidate[] = [];

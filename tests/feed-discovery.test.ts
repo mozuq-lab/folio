@@ -49,7 +49,7 @@ test('findFeedLinks: 相対URLは転送後の最終URLを基準に解決し、#�
 });
 
 test('findFeedLinks: 安全でないhrefを捨てる', () => {
-  const unsafe = ['http://example.com/feed', 'https://127.0.0.1/feed', 'https://192.168.0.1/feed', 'https://localhost/feed', 'https://intranet.local/rss',
+  const unsafe = ['http://127.0.0.1/feed', 'ftp://example.com/feed', 'https://127.0.0.1/feed', 'https://192.168.0.1/feed', 'https://localhost/feed', 'https://intranet.local/rss',
     'javascript:alert(1)', 'data:application/rss+xml,<rss/>', 'https://user:pass@example.com/feed', 'https://example.com:8443/feed', 'file:///etc/passwd', 'https://[::1]/feed', 'https://exa mple.com/feed'];
   const head = unsafe.map(href => link(`rel="alternate" type="application/rss+xml" href="${href}"`)).join('') + link('rel="alternate" type="application/rss+xml" href="https://example.com/ok.xml"');
   assert.deepEqual(findFeedLinks(page(head), PAGE).map(c => c.url), ['https://example.com/ok.xml']);
@@ -131,7 +131,7 @@ test('lookupFeed: 候補が2つ以上なら候補と最終URLを返し、フィ�
 });
 
 test('lookupFeed: 候補が0なら、指定が無いことと直接入力してほしいことを伝える', async () => {
-  const { fetcher } = fetcherOf({ [PAGE]: html(page(link('rel="alternate" type="application/rss+xml" href="http://example.com/feed"'))) });
+  const { fetcher } = fetcherOf({ [PAGE]: html(page(link('rel="alternate" type="application/rss+xml" href="http://localhost/feed"'))) });
   const error = await lookupFeed(PAGE, { fetcher }).catch((e: unknown) => e);
   assert.ok(error instanceof FeedError);
   assert.equal(error.message, NO_FEED_LINK_MESSAGE);
@@ -336,7 +336,7 @@ test('lookupFeed: 候補が1つでそのフィードを取得できないとき�
 
 test('lookupFeed: 候補のフィードが安全でないURLへ転送されたら取得しない', async () => {
   const head = link('rel="alternate" type="application/rss+xml" href="/feed.xml"');
-  for (const location of ['http://example.com/feed.xml', 'https://127.0.0.1/feed.xml', 'https://169.254.169.254/latest/']) {
+  for (const location of ['http://10.0.0.1/feed.xml', 'https://127.0.0.1/feed.xml', 'https://169.254.169.254/latest/']) {
     const { fetcher, calls } = fetcherOf({ [PAGE]: html(page(head)), 'https://example.com/feed.xml': () => new Response(null, { status: 302, headers: { location } }) });
     await assert.rejects(lookupFeed(PAGE, { fetcher }), FeedError, location);
     assert.deepEqual(calls, [PAGE, 'https://example.com/feed.xml'], location);
@@ -369,4 +369,15 @@ test('headLinks: 壊れたHTMLでも、ブラウザーと同じところでタ�
   // 名前の無い終了タグ（</ …>）は > まで読み飛ばす。終了タグの名前は属性として読まない。
   assert.deepEqual(urls(`<head></ ${rssLink('/bogus.xml')}${rssLink('/feed.xml')}</head>`), ['https://example.com/feed.xml']);
   assert.deepEqual(urls(`<head></x=">${rssLink('/feed.xml')}</head>`), ['https://example.com/feed.xml']);
+});
+
+test('lookupFeed: http:// のサイトとフィードも読み込む（httpsに読み替えない）', async () => {
+  const { fetcher, calls } = fetcherOf({
+    'http://example.com/': html(page(rssLink('/rss.xml'))),
+    'http://example.com/rss.xml': xml(),
+  });
+  const result = await lookupFeed('http://example.com/', { fetcher });
+  assert.ok('feed' in result);
+  assert.equal(result.feed.url, 'http://example.com/rss.xml');
+  assert.deepEqual(calls, ['http://example.com/', 'http://example.com/rss.xml']);
 });

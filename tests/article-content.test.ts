@@ -21,10 +21,12 @@ test('本文のないログイン・paywallページと巨大HTMLを拒否する
   assert.throws(() => extractArticleContent('a'.repeat(2 * 1024 * 1024 + 1), 'https://example.com/article'), /2MB|大き/);
 });
 
-test('本文fetchは公開HTTPSに限定しprivate redirectを辿らない', async () => {
+test('本文fetchは公開HTTP(S)に限定しprivate redirectを辿らない', async () => {
   const fetcher = (async () => new Response(null, { status: 302, headers: { location: 'https://127.0.0.1/private' } })) as typeof fetch;
   await assert.rejects(fetchArticleContent('https://example.com/article', fetcher), /公開|安全|URL/);
-  await assert.rejects(fetchArticleContent('http://example.com/article', fetcher), /公開|HTTPS/);
+  await assert.rejects(fetchArticleContent('http://example.com/article', fetcher), /安全|公開/);
+  await assert.rejects(fetchArticleContent('http://localhost/article', fetcher), /公開/);
+  await assert.rejects(fetchArticleContent('ftp://example.com/article', fetcher), /公開/);
 });
 
 test('安全な相対redirectからHTMLを抽出し、redirect loopを制限する', async () => {

@@ -14,7 +14,7 @@ export class ArticleContentError extends Error {
 }
 
 export function extractArticleContent(html: string, url: string): { title: string; content: string } {
-  if (!isSafeFeedUrl(url)) throw new ArticleContentError('公開されたHTTPSの記事URLを入力してください。', 400);
+  if (!isSafeFeedUrl(url)) throw new ArticleContentError('公開された記事のURL（http:// または https://）を入力してください。', 400);
   if (!html.trim()) throw new ArticleContentError('記事の本文が空です。');
   if (new TextEncoder().encode(html).byteLength > MAX_BYTES) throw new ArticleContentError('HTMLが大きすぎます。2MB以下の記事を指定してください。', 413);
   // linkedom parses without executing scripts or loading subresources.
@@ -41,13 +41,13 @@ async function readHTML(response: Response): Promise<string> {
 }
 
 export async function fetchArticleContent(url: string, fetcher: typeof fetch = fetch): Promise<{ title: string; content: string }> {
-  if (!isSafeFeedUrl(url)) throw new ArticleContentError('公開されたHTTPSの記事URLを入力してください。', 400);
+  if (!isSafeFeedUrl(url)) throw new ArticleContentError('公開された記事のURL（http:// または https://）を入力してください。', 400);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
   let current = new URL(url).href;
   try {
     for (let redirects = 0; redirects <= 3; redirects++) {
-      if (!isSafeFeedUrl(current)) throw new ArticleContentError('安全な公開HTTPS URLへのリダイレクトのみ取得できます。', 400);
+      if (!isSafeFeedUrl(current)) throw new ArticleContentError('安全な公開URLへのリダイレクトのみ取得できます。', 400);
       const response = await fetcher(current, { redirect: 'manual', signal: controller.signal, headers: { Accept: 'text/html, application/xhtml+xml;q=0.9' } });
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.headers.get('location');
