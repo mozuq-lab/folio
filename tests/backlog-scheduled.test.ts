@@ -113,3 +113,20 @@ test('期限切れ削除が失敗しても投げず、失敗として数える',
   const result = await runScheduledFetch({ db, now: new Date('2026-11-09T03:02:00.000Z'), allowedEmails: ALLOWED, fetcher: (async () => new Response(rss())) as typeof fetch });
   assert.deepEqual(result, { fetched: 0, inserted: 0, failed: 1, purged: 0 });
 });
+
+test('期限切れで消した記事は、フィードに載り続けていても次の定期取得で入り直さない', async () => {
+  const db = await setup([feed('a')]);
+  const fetcher = (async () => new Response(rss('x', 'y'), { headers: { 'content-type': 'application/rss+xml' } })) as typeof fetch;
+  const first = new Date('2026-08-01T01:00:00.000Z');
+  assert.equal((await runScheduledFetch({ db, now: first, allowedEmails: ALLOWED, fetcher })).inserted, 2);
+  // 91日後の削除の時間帯：取得のあとに2件とも消える。
+  const purgeTime = new Date('2026-10-31T03:01:00.000Z');
+  const purged = await runScheduledFetch({ db, now: purgeTime, allowedEmails: ALLOWED, fetcher });
+  assert.equal(purged.purged, 2);
+  assert.equal(count(db), 0);
+  // フィードには同じ2件が載り続けている。新しい記事 z だけが入る。
+  const next = await runScheduledFetch({ db, now: new Date('2026-10-31T05:00:00.000Z'), allowedEmails: ALLOWED, fetcher: (async () => new Response(rss('x', 'y', 'z'), { headers: { 'content-type': 'application/rss+xml' } })) as typeof fetch });
+  assert.equal(next.inserted, 1);
+  assert.equal(count(db), 1);
+  assert.deepEqual(db.sqlite.prepare('SELECT payload FROM folio_articles').all().map(row => (JSON.parse(String(row.payload)) as Article).title), ['z']);
+});

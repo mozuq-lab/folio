@@ -1,5 +1,5 @@
 import type { Article } from '../types.ts';
-import { MAX_CHANGES_PAGE, MAX_READ_BATCH, RETENTION_DAYS } from './constants.ts';
+import { EXPIRED_MARK_DAYS, MAX_CHANGES_PAGE, MAX_READ_BATCH, RETENTION_DAYS } from './constants.ts';
 import type { BacklogEntry, StoredArticle } from './types.ts';
 export type { BacklogEntry, StoredArticle } from './types.ts';
 
@@ -42,10 +42,17 @@ function insertStatements(db: Db, userId: string, feedOf: (article: Article) => 
     for (const article of group) {
       const stored = withoutContent(article);
       const n = binds.length;
-      values.push(`(?1, ?${n + 1}, ?${n + 2}, ?${n + 3}, ?${n + 4}, ?2, NULL, ${SEQ}, ?${n + 5})`);
+      values.push(`(?${n + 1}, ?${n + 2}, ?${n + 3}, ?${n + 4}, ?${n + 5})`);
       binds.push(stored.id, feedOf(article), stored.url, stored.publishedAt, JSON.stringify(stored));
     }
-    return db.prepare(`INSERT OR IGNORE INTO folio_articles (user_id, article_id, feed_id, url, published_at, fetched_at, read_at, updated_seq, payload) VALUES ${values.join(', ')}`).bind(...binds);
+    // 期限切れで消した記事（folio_expired に印がある記事。IDかURLが同じもの）は入れ直さない。
+    // VALUES の列は column1（記事ID）〜 column5（payload）。
+    return db.prepare(
+      `INSERT OR IGNORE INTO folio_articles (user_id, article_id, feed_id, url, published_at, fetched_at, read_at, updated_seq, payload)
+       SELECT ?1, v.column1, v.column2, v.column3, v.column4, ?2, NULL, ${SEQ}, v.column5 FROM (VALUES ${values.join(', ')}) AS v
+       WHERE NOT EXISTS (SELECT 1 FROM folio_expired e WHERE e.user_id = ?1 AND e.article_id = v.column1)
+         AND NOT EXISTS (SELECT 1 FROM folio_expired e WHERE e.user_id = ?1 AND e.url = v.column3)`,
+    ).bind(...binds);
   });
 }
 
@@ -121,10 +128,24 @@ export async function importArticles(db: Db, userId: string, articles: Article[]
   return { inserted, markedRead };
 }
 
+/**
+ * 取得から RETENTION_DAYS 日を過ぎた記事を消す。消す記事のIDとURLは folio_expired に印として残し、
+ * フィードに載り続けていても取り込み直さない（未読に戻って一覧に再び出るのを防ぐ）。
+ * 印は EXPIRED_MARK_DAYS 日で消す。印を書くことと記事を消すことは1つのbatch（トランザクション）で行う。
+ */
 export async function purgeExpired(db: Db, now: Date, limit = 5000) {
   const cutoff = new Date(now.getTime() - RETENTION_DAYS * 86400000).toISOString();
-  const result = await db.prepare(
-    'DELETE FROM folio_articles WHERE rowid IN (SELECT rowid FROM folio_articles WHERE fetched_at < ? LIMIT ?)',
-  ).bind(cutoff, limit).run();
-  return result.meta.changes;
+  const markCutoff = new Date(now.getTime() - EXPIRED_MARK_DAYS * 86400000).toISOString();
+  // 印を書く行と消す行が同じになるよう、どちらも rowid の順で同じ件数を選ぶ。
+  const expiring = 'SELECT rowid FROM folio_articles WHERE fetched_at < ?1 ORDER BY rowid LIMIT ?2';
+  const [, deleted] = await db.batch([
+    db.prepare(
+      `INSERT INTO folio_expired (user_id, article_id, url, expired_at)
+       SELECT user_id, article_id, url, ?3 FROM folio_articles WHERE rowid IN (${expiring})
+       ON CONFLICT (user_id, article_id) DO UPDATE SET url = excluded.url, expired_at = excluded.expired_at`,
+    ).bind(cutoff, limit, now.toISOString()),
+    db.prepare(`DELETE FROM folio_articles WHERE rowid IN (${expiring})`).bind(cutoff, limit),
+    db.prepare('DELETE FROM folio_expired WHERE rowid IN (SELECT rowid FROM folio_expired WHERE expired_at < ?1 LIMIT ?2)').bind(markCutoff, limit),
+  ]);
+  return deleted.meta?.changes ?? 0;
 }
