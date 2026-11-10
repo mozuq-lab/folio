@@ -9,7 +9,7 @@ const preferences = (v:unknown):v is Preferences => record(v)&&strings(v.interes
 export function decodeState(raw:string|null,fallback:ReaderState):ReaderState {
   if(!raw)return fallback;
   try { const d:unknown=JSON.parse(raw);
-    if(!record(d)||d.version!==1||!Array.isArray(d.articles)||!d.articles.every(article)||!Array.isArray(d.feeds)||!d.feeds.every(feed)||!strings(d.saved)||!strings(d.read)||!preferences(d.preferences)||!record(d.feedback)||!Object.values(d.feedback).every(x=>x==='like'||x==='dislike')||!(d.backlogMigratedAt===undefined||typeof d.backlogMigratedAt==='string')||!(d.folders===undefined||Array.isArray(d.folders)&&d.folders.every(f=>record(f)&&typeof f.name==='string'&&f.name.length>0&&strings(f.feedIds)))||!(d.lastUpdated===null||typeof d.lastUpdated==='string'))return fallback;
+    if(!record(d)||d.version!==1||!Array.isArray(d.articles)||!d.articles.every(article)||!Array.isArray(d.feeds)||!d.feeds.every(feed)||!strings(d.saved)||!strings(d.read)||!preferences(d.preferences)||!record(d.feedback)||!Object.values(d.feedback).every(x=>x==='like'||x==='dislike')||!(d.backlogMigratedAt===undefined||typeof d.backlogMigratedAt==='string')||!(d.folders===undefined||Array.isArray(d.folders)&&d.folders.every(f=>record(f)&&typeof f.name==='string'&&f.name.length>0&&strings(f.feedIds)))||!(d.everSaved===undefined||Array.isArray(d.everSaved)&&d.everSaved.every(e=>record(e)&&typeof e.id==='string'&&typeof e.at==='string'))||!(d.lastUpdated===null||typeof d.lastUpdated==='string'))return fallback;
     return d as unknown as ReaderState;
   }catch{return fallback;}
 }

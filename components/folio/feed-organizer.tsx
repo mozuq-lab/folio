@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Check, FolderPlus, GripVertical, Pencil, Search, Ta
 import { FeedIcon } from './feed-icon';
 import { formatFetchState, type FeedFetchState } from '../../lib/backlog/priority';
 import { createFolder, deleteFolder, moveFeedInFolder, moveFolder, renameFolder, setFeedFolders, sidebarGroups, type FeedFolder } from '../../lib/folders';
+import { formatFeedStat, type FeedStat } from '../../lib/saved-history';
 import { filterFeeds } from '../../lib/sidebar';
 import type { Feed } from '../../lib/types';
 
@@ -16,6 +17,8 @@ export type FeedOrganizerProps = {
   folders: FeedFolder[];
   fetchStates: Record<string, FeedFetchState>;
   showFetchStates: boolean;
+  /** フィードごとの、届いた記事の数と保存したことのある記事の数。端末の記事を読み込むまでは渡さない。 */
+  stats?: ReadonlyMap<string, FeedStat>;
   onTogglePriority: (feedId: string) => void;
   onRemove: (feed: Feed) => void;
   /** 分類を変える。結果の分類に合わせて各フィードの category も呼び出し側でそろえる。 */
@@ -108,6 +111,7 @@ export function FeedOrganizer(props: FeedOrganizerProps) {
     </ul>
 
     <div className="modal-section-title"><h3>購読中のフィード</h3><span>{feeds.length}件</span></div>
+    {props.stats && feeds.length > 0 && <p className="organizer-help">「届いた記事」は、取得してためている直近90日分の記事の数です。「うち保存」は、そのうち一度でも「あとで読む」に入れた記事の数で、保存を解除した記事も数えます。</p>}
     {feeds.length > 0 && <div className="feed-search"><Search size={14} /><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="フィード名またはURLで検索" aria-label="購読中のフィードを検索" /></div>}
     <div className="manage-feeds">
       {!feeds.length && <p className="muted">購読中のフィードはありません。上から追加できます。</p>}
@@ -135,7 +139,7 @@ type RowProps = FeedOrganizerProps & {
   drag?: DragHandlers & { dragging: boolean };
 };
 
-function FeedRow({ feed, folders, fetchStates, showFetchStates, onTogglePriority, onRemove, onOrganize, order, drag }: RowProps) {
+function FeedRow({ feed, folders, fetchStates, showFetchStates, stats, onTogglePriority, onRemove, onOrganize, order, drag }: RowProps) {
   const [choosing, setChoosing] = useState(false);
   const member = folders.filter(folder => folder.feedIds.includes(feed.id)).map(folder => folder.name);
   const toggle = (name: string) => onOrganize(current => setFeedFolders(current, feed.id, member.includes(name) ? member.filter(item => item !== name) : [...member, name]));
@@ -147,6 +151,7 @@ function FeedRow({ feed, folders, fetchStates, showFetchStates, onTogglePriority
       <strong>{feed.name}</strong>
       {/^https:\/\//i.test(feed.url) ? <a className="feed-url" href={feed.url} target="_blank" rel="noopener noreferrer">{feed.url}</a> : <span>{feed.url}</span>}
       {showFetchStates && <span className="feed-fetch-state">{formatFetchState(fetchStates[feed.id], new Date())}</span>}
+      {stats && <span className="feed-fetch-state">{formatFeedStat(stats.get(feed.id))}</span>}
       {choosing && <fieldset className="folder-choices"><legend>{feed.name}の分類</legend>
         {folders.length ? folders.map(folder => <label key={folder.name}><input type="checkbox" checked={member.includes(folder.name)} onChange={() => toggle(folder.name)} />{folder.name}</label>) : <span>先に「分類」で分類を作ってください。</span>}
       </fieldset>}
