@@ -22,12 +22,12 @@ function memoryCache(): FaviconCache & { store: Map<string, Response> } {
 }
 
 test('faviconSrc: サイトのURL（無ければフィードのURL）のオリジンで /api/favicon を指す', () => {
-  assert.equal(faviconSrc({ website: 'https://example.com/blog/', url: 'https://feeds.example.net/rss' }), '/api/favicon?site=https%3A%2F%2Fexample.com');
-  assert.equal(faviconSrc({ website: 'not a url', url: 'https://feeds.example.net/rss' }), '/api/favicon?site=https%3A%2F%2Ffeeds.example.net');
+  assert.equal(faviconSrc({ website: 'https://example.com/blog/', url: 'https://feeds.example.net/rss' }), '/api/favicon?site=https%3A%2F%2Fexample.com&v=2');
+  assert.equal(faviconSrc({ website: 'not a url', url: 'https://feeds.example.net/rss' }), '/api/favicon?site=https%3A%2F%2Ffeeds.example.net&v=2');
   assert.equal(faviconSrc({ website: 'http://example.com', url: 'http://x.example/feed' }), null);
 });
 
-test('/favicon.ico が画像ならそれを返し、型・キャッシュ・安全のヘッダーを付けてCache APIにも保存する', async () => {
+test('ページにアイコン指定が無ければ /favicon.ico を返し、型・キャッシュ・安全のヘッダーを付けてCache APIにも保存する', async () => {
   const { fetcher, calls } = fetcherOf({ 'https://example.com/favicon.ico': () => new Response(ICO, { headers: { 'content-type': 'image/x-icon' } }) });
   const cache = memoryCache();
   const res = await handleFavicon(req('https://example.com'), { fetcher, cache });
@@ -37,14 +37,14 @@ test('/favicon.ico が画像ならそれを返し、型・キャッシュ・安�
   assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
   assert.match(res.headers.get('content-security-policy') ?? '', /sandbox/);
   assert.deepEqual(new Uint8Array(await res.arrayBuffer()), ICO);
-  assert.deepEqual(calls, ['https://example.com/favicon.ico']);
+  assert.deepEqual(calls, ['https://example.com/', 'https://example.com/favicon.ico']);
   // 2回目はCache APIから返し、配信元には行かない。
   const again = await handleFavicon(req('https://example.com'), { fetcher, cache });
   assert.equal(again.status, 200);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
 });
 
-test('/favicon.ico が無ければ、トップページの <link rel="icon"> を使う（相対URLも解決する）', async () => {
+test('トップページの <link rel="icon"> を /favicon.ico より先に使う（相対URLも解決する）', async () => {
   const html = '<html><head><link rel="stylesheet" href="/a.css"><link href="/static/icon.png" rel="shortcut icon"></head><body></body></html>';
   const { fetcher, calls } = fetcherOf({
     'https://example.com/': () => new Response(html, { headers: { 'content-type': 'text/html' } }),
@@ -53,7 +53,7 @@ test('/favicon.ico が無ければ、トップページの <link rel="icon"> を
   const res = await handleFavicon(req('https://example.com'), { fetcher });
   assert.equal(res.status, 200);
   assert.equal(res.headers.get('content-type'), 'image/png');
-  assert.deepEqual(calls, ['https://example.com/favicon.ico', 'https://example.com/', 'https://example.com/static/icon.png']);
+  assert.deepEqual(calls, ['https://example.com/', 'https://example.com/static/icon.png']);
 });
 
 test('SVG・HTML・大きすぎる画像は使わず、見つからなければ404（短めにキャッシュ）', async () => {
