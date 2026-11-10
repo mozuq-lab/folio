@@ -1,10 +1,11 @@
-/* 配色の切り替え（サイドバーの下部。サイドバーはどちらの配色でも暗い面） */
-.theme-switcher{display:flex;align-items:center;gap:10px;padding:4px 12px 12px;flex-shrink:0}
-.theme-switcher-label{font-size:11px;color:var(--sidebar-muted);white-space:nowrap}
-.theme-options{display:flex;flex:1;gap:2px;padding:2px;border:1px solid var(--sidebar-line);border-radius:7px;background:var(--sidebar-well)}
-.theme-options>button{display:flex;flex:1;align-items:center;justify-content:center;gap:4px;min-height:28px;padding:4px 6px;border-radius:5px;font-size:11px;color:var(--sidebar-ink);white-space:nowrap}
-.theme-options>button:hover{background:var(--sidebar-hover);color:#fff}
+/* 配色の切り替え（設定画面の「配色」） */
+.theme-switcher-note{margin:8px 0 0;font-size:11px;line-height:1.8;color:var(--n-500)}
+.theme-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
+.theme-options>button{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0;padding:14px 8px;border:1px solid var(--n-200);border-radius:8px;color:var(--n-500);font-size:12px;text-align:center}
+.theme-options>button strong{font-weight:550}
+.theme-options>button small{font-size:10px;color:var(--n-400)}
+.theme-options>button:hover{background:var(--n-100)}
 /* 選択中の見た目は <html data-theme> から決める。再読み込みの直後（画面のスクリプトが動く前）から、表示中の配色と同じボタンを選択中に見せる。 */
-:root:not([data-theme]) .theme-options>button[data-theme-value=system],:root[data-theme=light] .theme-options>button[data-theme-value=light],:root[data-theme=dark] .theme-options>button[data-theme-value=dark]{background:var(--sidebar-active);color:#fff;font-weight:600;box-shadow:inset 0 0 0 1px var(--sidebar-muted)}
-.theme-options>button:focus-visible{outline:2px solid var(--sidebar-focus);outline-offset:1px}
-@media(max-width:760px){.theme-options>button{min-height:32px}}
+:root:not([data-theme]) .theme-options>button[data-theme-value=system],:root[data-theme=light] .theme-options>button[data-theme-value=light],:root[data-theme=dark] .theme-options>button[data-theme-value=dark]{background:var(--n-150);border-color:var(--n-300);color:var(--a-600)}
+.theme-options>button:focus-visible{outline:2px solid var(--a-500);outline-offset:1px}
+@media(max-width:480px){.theme-options>button{padding:12px 4px}.theme-options>button small{font-size:9px}}

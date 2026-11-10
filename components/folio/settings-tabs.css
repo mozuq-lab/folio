@@ -1,0 +1,9 @@
+/* 設定画面の項目の切り替え（見出しの下に並べる） */
+.settings-tabs{display:flex;gap:3px;margin:18px 27px 0;padding:3px;background:var(--n-100);border:1px solid var(--n-150);border-radius:7px}
+.settings-tabs>button{display:flex;flex:1;align-items:center;justify-content:center;gap:6px;min-width:0;padding:8px 10px;border-radius:5px;color:var(--n-500);font-size:12px;white-space:nowrap}
+.settings-tabs>button>span{overflow:hidden;text-overflow:ellipsis}
+.settings-tabs>button:hover{color:var(--n-700)}
+.settings-tabs>button[aria-selected=true]{color:var(--a-700);background:var(--n-0);box-shadow:0 1px 4px rgb(var(--shadow) / 0.047);font-weight:550}
+.settings-tabs>button:focus-visible{outline:2px solid var(--a-500);outline-offset:1px}
+@media(max-width:760px){.settings-tabs{margin:15px 19px 0}.settings-tabs>button{flex:1 1 auto;gap:4px;padding:8px 6px;font-size:11px}}
+@media(max-width:400px){.settings-tabs>button>svg{display:none}}
