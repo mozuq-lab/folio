@@ -61,3 +61,12 @@ test('runAIのタイムアウトで応答しないWorkers AIは504 timeout', asy
   t.mock.timers.tick(90_000);
   await check;
 });
+test('OpenAI互換の形（choices[0].message.content）で返すモデルの出力も読む', async () => {
+  const chat = (content: unknown, finish = 'stop') => ({ id: 'x', object: 'chat.completion', choices: [{ index: 0, finish_reason: finish, message: { role: 'assistant', content, reasoning_content: '考えた過程 sk-secret' } }], usage: {} });
+  for (const content of ['{"kind":"ask"}', '```json\n{"kind":"ask"}\n```', { kind: 'ask' }])
+    assert.deepEqual(await provider(async () => chat(content)).generate(base()), { kind: 'ok', json: { kind: 'ask' } });
+  // 出力の上限で途中で切れたときは「途中で終わった」として扱う。
+  assert.deepEqual(await provider(async () => chat('{"kind":"as', 'length')).generate(base()), { kind: 'incomplete' });
+  for (const result of [chat('not json sk-secret'), chat(null), { choices: [] }, { choices: 'x' }])
+    await fails(provider(async () => result), 'invalid_output', 502);
+});
