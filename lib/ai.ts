@@ -44,15 +44,16 @@ export function validateRequest(value: unknown): AIRequest {
 }
 
 function invalidOutput():never {throw new AIError(502,'invalid_output',INVALID_OUTPUT_MESSAGE);}
-// tags を書かないモデルもあるので、analyze では無い tags を空として扱ってから形を確かめる。
-function withEmptyTags(value:unknown):unknown {
+// tags を書かないモデルや、候補にない・多すぎるタグを返すモデルもある。1件のタグのせいで50件のまとまりが失敗しないよう、
+// analyze では形を確かめる前に tags を候補の中のものだけ（3個まで）にそろえる。
+function withSanitizedTags(value:unknown):unknown {
   if(!value||typeof value!=='object'||(value as {kind?:unknown}).kind!=='analyze')return value;
   const analysis=(value as {analysis?:unknown}).analysis;
   if(!Array.isArray(analysis))return value;
-  return {...value,analysis:analysis.map(item=>item&&typeof item==='object'&&!('tags' in item)?{...item,tags:[]}:item)};
+  return {...value,analysis:analysis.map(item=>item&&typeof item==='object'?{...item,tags:sanitizeTopics((item as {tags?:unknown}).tags)}:item)};
 }
 function validateResult(raw:unknown,schema:Schema,request:AIRequest):AIResult {
-  const value=withEmptyTags(raw);
+  const value=withSanitizedTags(raw);
   if(!conforms(value,schema))invalidOutput();
   const result=value as AIResult;
   const articles=new Map(request.articles.map(article=>[article.id,article]));
@@ -60,7 +61,9 @@ function validateResult(raw:unknown,schema:Schema,request:AIRequest):AIResult {
   if(result.kind==='analyze'){
     // 多くの記事を一度に評価するので、一部の記事が抜けても評価できた分は使う。重複と送っていない記事は除く。
     const seen=new Set<string>();
-    result.analysis=result.analysis.filter(item=>articles.has(item.articleId)&&!seen.has(item.articleId)&&seen.add(item.articleId)).map(item=>({...item,summary:item.summary.slice(0,200),reason:item.reason.slice(0,80),importanceReason:item.importanceReason.slice(0,80),tags:sanitizeTopics(item.tags)}));
+    result.analysis=result.analysis.filter(item=>articles.has(item.articleId)&&!seen.has(item.articleId)&&seen.add(item.articleId)).map(({tags,...item})=>({...item,summary:item.summary.slice(0,200),reason:item.reason.slice(0,80),importanceReason:item.importanceReason.slice(0,80),
+      // タグが付かなかった記事は tags を持たせず、規則で付けたタグを使い続ける。
+      ...(tags?.length?{tags}:{})}));
     if(!result.analysis.length)invalidOutput();
   } else if(result.kind==='digest'){
     const digest=result.digest;

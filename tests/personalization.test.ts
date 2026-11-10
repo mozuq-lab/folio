@@ -29,4 +29,7 @@ test('AIで評価した記事は、規則のタグの代わりにAIのタグを�
   // AIのタグが無い（以前の評価）ときは規則のタグのまま。
   const old = { ...DEFAULT_INTELLIGENCE, analysis: { a: { articleId: 'a', interest: 50, importance: 50, summary: '', reason: 'r', importanceReason: 'i' } } };
   assert.deepEqual(rankPersonalized([article], { interests: [], mutedTopics: [], topicWeights: {}, sourceWeights: {}, diversity: 0 }, {}, old)[0].tags, ['テクノロジー']);
+  // AIのタグが空なら、規則のタグを消さない。
+  const empty = { ...DEFAULT_INTELLIGENCE, analysis: { a: { articleId: 'a', interest: 50, importance: 50, summary: '', reason: 'r', importanceReason: 'i', tags: [] } } };
+  assert.deepEqual(rankPersonalized([article], { interests: [], mutedTopics: [], topicWeights: {}, sourceWeights: {}, diversity: 0 }, {}, empty)[0].tags, ['テクノロジー']);
 });

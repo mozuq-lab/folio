@@ -22,8 +22,8 @@ const TOPIC_RULES: [string, RegExp][] = [
   ['スタートアップ', /スタートアップ|startup|起業|資金調達|ベンチャー/i],
   ['暮らし', /暮らし|生活|料理|住まい|旅行|ライフスタイル|lifestyle/i],
   ['開発', /開発|プログラ|エンジニア|typescript|javascript|github|\brust\b|\breact\b|\bpython\b|developer|software/i],
-  ['プロダクト', /プロダクト|product|新製品|新機能|発売|ローンチ|\blaunch(?:es|ed)?\b/i],
-  ['カルチャー', /カルチャー|culture|文化|映画|音楽|アート|\bart\b|アニメ|漫画|マンガ|小説|書籍|エンタメ|entertainment|\bmovies?\b|\bmusic\b|\bfilms?\b/i],
+  ['プロダクト', /プロダクト|\bproducts?\b|新製品|新機能|発売|ローンチ|\blaunch(?:es|ed)?\b/i],
+  ['カルチャー', /カルチャー|\bcultur(?:e|al)\b|文化|映画|音楽|アート|\bart\b|アニメ|漫画|マンガ|小説|書籍|エンタメ|entertainment|\bmovies?\b|\bmusic\b|\bfilms?\b/i],
 ];
 
 /** 当てはまるトピックをすべて返す。どれにも当てはまらなければ空（「テクノロジー」にはしない）。 */

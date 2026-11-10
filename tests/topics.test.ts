@@ -16,6 +16,10 @@ test('どれにも当てはまらなければタグを付けない（テクノ�
   assert.deepEqual(tagTopics('今日の天気について'), []);
   // 「start」の中の art はカルチャーにしない。
   assert.ok(!tagTopics('How to start a company').includes('カルチャー'));
+  // production・productivity・agriculture は単語の一部なので当てはめない。
+  assert.ok(!tagTopics('Deploying to production with better productivity').includes('プロダクト'));
+  assert.ok(!tagTopics('The future of agriculture').includes('カルチャー'));
+  assert.ok(tagTopics('New products for teams').includes('プロダクト'));
 });
 
 test('sanitizeTopics: 候補にあるものだけを、重複を除いて3個まで残す', () => {

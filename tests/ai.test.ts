@@ -24,7 +24,7 @@ test('引用0件なら根拠という単語や断定を含む回答もアプリ�
 });
 test('analyzeは関心と重要度を独立に返し、不正scoreと空の結果を拒否する',async()=>{
   const analysis={articleId:'a',interest:10,importance:90,summary:'',reason:'関心との一致は小さい',importanceReason:'交通政策への影響'};
-  assert.deepEqual(await runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:[analysis]}))),{kind:'analyze',analysis:[{...analysis,tags:[]}]});
+  assert.deepEqual(await runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:[analysis]}))),{kind:'analyze',analysis:[analysis]});
   for(const list of [[],[{...analysis,importance:101}],[{...analysis,articleId:'unknown'}]]) await assert.rejects(runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:list}))),AIError);
 });
 test('analyzeは50件まで送れ、重複・不明なIDは除き、評価できなかった記事は結果に含めない',async()=>{
@@ -105,7 +105,13 @@ test('analyzeはタグを候補の中から3個まで返し、候補にないも
   assert.ok(seen.includes('tags')&&seen.includes('カルチャー')&&seen.includes('プロダクト'));
   assert.ok(JSON.stringify(schema).includes('"tags"'));
 });
-test('analyzeでtagsを書かないモデルの出力は、tagsを空として受け付ける',async()=>{
-  const result=await runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:[{articleId:'a',interest:1,importance:1,summary:'',reason:'r',importanceReason:'i'}]})));
-  assert.ok(result.kind==='analyze');assert.deepEqual(result.analysis[0].tags,[]);
+test('analyzeでtagsが無い・空・候補外だけの出力は受け付け、tagsを持たない評価にする（規則のタグを使い続ける）',async()=>{
+  for(const extra of [{},{tags:[]},{tags:['未知']},{tags:'開発'}]){
+    const result=await runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:[{articleId:'a',interest:1,importance:1,summary:'',reason:'r',importanceReason:'i',...extra}]})));
+    assert.ok(result.kind==='analyze');assert.equal('tags' in result.analysis[0],false);
+  }
+});
+test('analyzeでtagsが多すぎる・長すぎる記事があっても、まとまり全体は失敗しない',async()=>{
+  const result=await runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:[{articleId:'a',interest:1,importance:1,summary:'',reason:'r',importanceReason:'i',tags:[...Array.from({length:40},()=>'x'.repeat(100)),'開発']}]})));
+  assert.ok(result.kind==='analyze');assert.deepEqual(result.analysis[0].tags,['開発']);
 });
