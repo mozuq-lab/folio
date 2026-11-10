@@ -1,10 +1,10 @@
 'use client';
 
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
-import { ArrowUpRight, Bookmark, BookOpen, Check, Clock3, Compass, FileText, Layers3, LoaderCircle, MessageSquare, Search, Sparkles, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react';
+import { ArrowUpRight, Bookmark, BookOpen, Clock3, Compass, FileText, LoaderCircle, MessageSquare, Search, Sparkles, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react';
 import type { Article, ReaderState } from '../../lib/types';
-import type { AIRequest, AIResult, ArticleNote, DigestResult, IntelligenceState, StoryReport } from '../../lib/intelligence-types';
-import { buildReadingPlan, clusterStories, recentArticles, searchLibrary, selectExploration, visibleStories } from '../../lib/discovery';
+import type { AIRequest, AIResult, ArticleNote, DigestResult, IntelligenceState } from '../../lib/intelligence-types';
+import { buildReadingPlan, searchLibrary, selectExploration } from '../../lib/discovery';
 import './intelligence-panels.css';
 
 export interface FeaturePanelProps {
@@ -71,51 +71,6 @@ export function DigestView(props: FeaturePanelProps) {
     {intelligence.digest && <DigestContent digest={intelligence.digest} articles={reader.articles} onOpen={onOpen} />}
     <div className="fi-section-title"><BookOpen size={18} /><h2>すぐに読めるプラン</h2><span>AIを使わず作成</span></div>
     {plan.items.length ? <DigestContent digest={plan} articles={reader.articles} onOpen={onOpen} /> : <Empty>{reader.articles.length ? 'この時間内に読める未読記事がありません。時間を増やすか、新しい記事を取り込んでください。' : 'フィードを追加すると、未読記事から読書プランを作れます。'}</Empty>}
-  </div>;
-}
-
-function ReportContent({ report, articles, onOpen }: { report: StoryReport; articles: Article[]; onOpen: FeaturePanelProps['onOpen'] }) {
-  function citations(ids: string[]) {
-    return [...new Set(ids)].map(id => articles.find(article => article.id === id)).filter((article): article is Article => Boolean(article)).map(article => <SourceButton key={article.id} article={article} onOpen={onOpen} />);
-  }
-  return <div className="fi-report"><span className="fi-badge"><Sparkles size={13} />AIによる比較</span><p className="fi-copy">{report.overview}</p>
-    {report.developments.length > 0 && <div><h3>報道の進展</h3>{report.developments.map((development, i) => <div className="fi-report-point" key={i}><p>{development.text}</p>{citations(development.articleIds)}</div>)}</div>}
-    {report.perspectives.length > 0 && <div><h3>媒体ごとの視点</h3>{report.perspectives.map((perspective, i) => <div className="fi-report-point" key={i}><strong>{perspective.sourceName}</strong><p>{perspective.point}</p>{citations(perspective.articleIds)}</div>)}</div>}
-    {report.uncertainties.length > 0 && <div className="fi-caution"><h3>記事だけでは分からないこと</h3><ul>{report.uncertainties.map((text, i) => <li key={i}>{text}</li>)}</ul></div>}
-  </div>;
-}
-
-export function StoriesView(props: FeaturePanelProps) {
-  const { reader, intelligence, setIntelligence, onOpen, requestAI, aiAvailable, aiBusy } = props;
-  const [includeSingles, setIncludeSingles] = useState(false);
-  const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState('');
-  // バックログを含めると数万件になるので、ニュースのまとまりは直近7日の記事だけで作る。
-  // 記事の配列を既読の変化と別に保つと、既読にしたときも同じニュースの索引を作り直さずに済む。
-  const recent = useMemo(() => recentArticles(reader.articles, new Date()), [reader.articles]);
-  const clusters = useMemo(() => clusterStories(recent, reader.read), [recent, reader.read]);
-  const readIds = useMemo(() => new Set(reader.read), [reader.read]);
-  const shown = visibleStories(clusters, includeSingles);
-  async function compare(id: string, articles: Article[]) {
-    if (!aiAvailable || aiBusy || pending) return;
-    setPending(id); setError('');
-    try {
-      const selected = articles.slice(0, 30);
-      const result = await requestAI({ action: 'compare', articles: selected, readIds: selected.filter(article => readIds.has(article.id)).map(article => article.id) });
-      if (result.kind !== 'compare') throw new Error('ニュース比較の応答を確認できませんでした。');
-      setIntelligence(current => ({ ...current, storyReports: { ...current.storyReports, [id]: result.report } }));
-    } catch (error) { setError(errorMessage(error)); } finally { setPending(null); }
-  }
-  return <div className="fi-panel"><div className="fi-toolbar"><p className="fi-copy">同じニュースをまとめて、続報や媒体の違いを読み比べる。</p><label className="fi-checkbox"><input type="checkbox" checked={includeSingles} onChange={event => setIncludeSingles(event.target.checked)} />1つの媒体だけのまとまりも表示</label></div>
-    <AIStatus available={aiAvailable} label={props.aiLabel} /><ErrorNotice message={error} />
-    {!shown.length && <Empty>{reader.articles.length ? '複数の媒体で報じられたニュースはまだありません。「1つの媒体だけのまとまりも表示」で、ほかの記事も見られます。' : 'フィードを追加すると、同じニュースの記事をここにまとめます。'}</Empty>}
-    {shown.map(cluster => <article className="fi-card fi-story" key={cluster.id}><div className="fi-heading"><span className="fi-badge"><Layers3 size={14} />{cluster.articles.length}記事 · {new Set(cluster.articles.map(article => article.sourceId)).size}媒体</span><span className="fi-meta">既読 {cluster.readArticles.length} / 未読 {cluster.unreadArticles.length}</span></div>
-      <h2>{cluster.title}</h2>
-      {cluster.newCoverage.length > 0 && <div className="fi-coverage"><h3>新着の報道</h3><p className="fi-help">未読記事の見出し・概要の抜粋です。新しい事実の判定ではありません。</p><ul>{cluster.newCoverage.map((text, i) => <li key={i}>{text}</li>)}</ul></div>}
-      <div className="fi-story-sources">{cluster.articles.map(article => <div key={article.id} className="fi-story-source"><span className={`fi-read-state ${readIds.has(article.id) ? 'is-read' : ''}`}>{readIds.has(article.id) ? <Check size={13} /> : <span className="fi-unread-dot" />}{readIds.has(article.id) ? '既読' : '未読'}</span><SourceButton article={article} onOpen={onOpen} /></div>)}</div>
-      {aiAvailable && <button className="fi-button" type="button" disabled={aiBusy || pending !== null} onClick={() => compare(cluster.id, cluster.articles)}>{pending === cluster.id ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}{pending === cluster.id ? '報道を比較中…' : 'AIで報道を比較'}</button>}
-      {intelligence.storyReports[cluster.id] && <ReportContent report={intelligence.storyReports[cluster.id]} articles={cluster.articles} onOpen={onOpen} />}
-    </article>)}
   </div>;
 }
 
