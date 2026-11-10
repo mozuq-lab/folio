@@ -1,5 +1,6 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import type { Article, Feed } from './types.ts';
+import { tagTopics } from './topics.ts';
 
 const MAX_BYTES = 2 * 1024 * 1024;
 // Upper bound per feed; most feeds publish far fewer items. Fetched articles go to the D1 backlog (folio_articles), not the sync document.
@@ -119,21 +120,6 @@ function linkUrl(value: unknown, base: string): string | undefined {
   return undefined;
 }
 
-const topicRules: [string, RegExp][] = [
-  ['AI・機械学習', /\bai\b|人工知能|生成ai|機械学習|llm|openai|chatgpt|deep learning|machine learning/i],
-  ['デザイン', /デザイン|design|\bux\b|\bui\b|figma|タイポグラフィ/i],
-  ['テクノロジー', /テクノロジー|technology|ガジェット|スマートフォン|デバイス|半導体/i],
-  ['ビジネス', /ビジネス|business|経営|マーケティング|経済|売上|働き方/i],
-  ['サイエンス', /サイエンス|science|科学|宇宙|生物|物理|研究|研究所/i],
-  ['スタートアップ', /スタートアップ|startup|起業|資金調達|ベンチャー/i],
-  ['暮らし', /暮らし|生活|料理|住まい|旅行|ライフスタイル|lifestyle/i],
-  ['開発', /開発|プログラ|エンジニア|typescript|javascript|github|\brust\b|\breact\b|\bpython\b|developer|software/i],
-];
-
-function topics(text: string): string[] {
-  const matches = topicRules.filter(([, rule]) => rule.test(text)).map(([name]) => name);
-  return matches.length ? matches : ['テクノロジー'];
-}
 
 function hash(value: string): string {
   let result = 2166136261;
@@ -183,7 +169,7 @@ export function parseFeed(xml: string, feedUrl: string): ParsedFeed {
   const website = linkUrl(channel.link, feedUrl) ?? new URL(feedUrl).origin;
   const feed: Feed = {
     id: `feed-${hash(feedUrl)}`, name, url: feedUrl, website,
-    category: topics(`${name} ${plainText(channel.description ?? channel.subtitle)}`)[0],
+    category: tagTopics(`${name} ${plainText(channel.description ?? channel.subtitle)}`)[0] ?? '未分類',
     color: ['#DB775C', '#6F8371', '#7685A0', '#A88C59'][Number.parseInt(hash(feedUrl), 36) % 4],
     initial: [...name][0]?.toUpperCase() || 'F',
   };
@@ -210,7 +196,7 @@ export function parseFeed(xml: string, feedUrl: string): ParsedFeed {
       title, description, url, image: entryImage(entry, website),
       sourceId: feed.id, sourceName: feed.name,
       publishedAt: Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : new Date().toISOString(),
-      tags: topics(`${title} ${description} ${plainText(entry.category)}`),
+      tags: tagTopics(`${title} ${description} ${plainText(entry.category)}`),
       readingMinutes: Math.max(1, Math.min(60, Math.ceil(japaneseCharacters / 450 + words / 230))),
     });
   }

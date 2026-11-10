@@ -96,3 +96,22 @@ test('analyzeの理由は80字、要約は200字までに切り詰めて返す',
   assert.ok(result.kind==='analyze');
   assert.equal(result.analysis[0].summary.length,200);assert.equal(result.analysis[0].reason.length,80);assert.equal(result.analysis[0].importanceReason.length,80);
 });
+test('analyzeはタグを候補の中から3個まで返し、候補にないものは捨てる',async()=>{
+  let seen='';let schema:unknown;
+  const item={articleId:'a',interest:1,importance:1,summary:'',reason:'r',importanceReason:'i',tags:['開発','未知','開発','AI・機械学習','デザイン','ビジネス']};
+  const result=await runAI(request('analyze'),runtime(fake(r=>{seen=r.instructions;schema=r.schema;return {kind:'ok',json:{kind:'analyze',analysis:[item]}};})));
+  assert.ok(result.kind==='analyze');
+  assert.deepEqual(result.analysis[0].tags,['開発','AI・機械学習','デザイン']);
+  assert.ok(seen.includes('tags')&&seen.includes('カルチャー')&&seen.includes('プロダクト'));
+  assert.ok(JSON.stringify(schema).includes('"tags"'));
+});
+test('analyzeでtagsが無い・空・候補外だけの出力は受け付け、tagsを持たない評価にする（規則のタグを使い続ける）',async()=>{
+  for(const extra of [{},{tags:[]},{tags:['未知']},{tags:'開発'}]){
+    const result=await runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:[{articleId:'a',interest:1,importance:1,summary:'',reason:'r',importanceReason:'i',...extra}]})));
+    assert.ok(result.kind==='analyze');assert.equal('tags' in result.analysis[0],false);
+  }
+});
+test('analyzeでtagsが多すぎる・長すぎる記事があっても、まとまり全体は失敗しない',async()=>{
+  const result=await runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:[{articleId:'a',interest:1,importance:1,summary:'',reason:'r',importanceReason:'i',tags:[...Array.from({length:40},()=>'x'.repeat(100)),'開発']}]})));
+  assert.ok(result.kind==='analyze');assert.deepEqual(result.analysis[0].tags,['開発']);
+});

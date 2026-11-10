@@ -4,12 +4,19 @@ import {rankArticles} from './recommendations.ts';
 import {applyNaturalProfile,scoreNaturalPreference,scoreImportance} from './discovery.ts';
 export interface IntelligentArticle extends RankedArticle { importance:number; importanceReason:string; isExploration:boolean; aiAnalyzed:boolean; aiSummary?:string; interestScore:number; }
 const bounded=(v:number)=>Math.min(99,Math.max(0,Math.round(Number.isFinite(v)?v:0)));
+/** AIで評価した記事は、言葉の規則で付けたタグの代わりにAIが付けたタグを使う（AIのタグが無い・空ならそのまま）。 */
+export function withAITags<T extends Article>(articles:T[],analysis:IntelligenceState['analysis']):T[]{
+ return articles.map(a=>{const tags=analysis[a.id]?.tags;return tags?.length?{...a,tags}:a;});
+}
 export function rankPersonalized(articles:Article[],preferences:Preferences,feedback:Feedback,intelligence:IntelligenceState,includeHidden=false):IntelligentArticle[]{
  const prefs=includeHidden?{...preferences,mutedTopics:[]}:preferences;
- const candidates=includeHidden?articles:applyNaturalProfile(articles,intelligence.profile);
+ const withTags=withAITags(articles,intelligence.analysis);
+ const candidates=includeHidden?withTags:applyNaturalProfile(withTags,intelligence.profile);
  const ranked=rankArticles(candidates,prefs,includeHidden?{}:feedback);
+ // 重要度は元の記事で計算する（タグだけ違うコピーを渡すと、記事ごとに解析し直してしまう）。
+ const originals=new Map(articles.map(a=>[a.id,a] as const));
  return ranked.map(a=>{
-  const ai=intelligence.analysis[a.id];const impact=scoreImportance(a,articles);const natural=includeHidden?0:scoreNaturalPreference(a,intelligence.profile);
+  const ai=intelligence.analysis[a.id];const impact=scoreImportance(originals.get(a.id)??a,articles);const natural=includeHidden?0:scoreNaturalPreference(a,intelligence.profile);
   const learned=a.tags.reduce((sum,t)=>sum+(prefs.topicWeights[t]||0)*2,0)+(prefs.sourceWeights[a.sourceId]||0)*2;
   const interest=ai?bounded(ai.interest+Math.max(-16,Math.min(16,learned))+(feedback[a.id]==='like'?8:0)):bounded(a.score+natural);
   return {...a,score:interest,interestScore:interest,reason:ai?.reason||(natural>0?'自然文の好みと記事の内容が一致':a.reason),importance:ai?bounded(ai.importance):impact.score,importanceReason:ai?.importanceReason||impact.reason,isExploration:false,aiAnalyzed:!!ai,aiSummary:ai?.summary};

@@ -1,7 +1,7 @@
 import type { Article, ReaderState } from './types.ts';
 import type { Effort, ProviderId } from './ai/types.ts';
 export interface NaturalProfile { summary:string; boostTerms:string[]; muteTerms:string[]; preferredDepth:'any'|'introductory'|'practical'|'advanced'; }
-export interface ArticleAnalysis { articleId:string; interest:number; importance:number; summary:string; reason:string; importanceReason:string; }
+export interface ArticleAnalysis { articleId:string; interest:number; importance:number; summary:string; reason:string; importanceReason:string; /** AIが付けたトピック（lib/topics.ts の候補から）。以前の評価には無い。 */ tags?:string[]; }
 export interface ArticleNote { id:string; articleId:string; quote:string; body:string; createdAt:string; updatedAt:string; }
 export interface DigestItem { articleId:string; summary:string; takeaway:string; minutes:number; }
 export interface DigestResult { title:string; overview:string; items:DigestItem[]; totalMinutes:number; generatedAt:string; mode:'ai'|'extractive'; }
