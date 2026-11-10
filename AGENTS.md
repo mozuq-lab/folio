@@ -1,6 +1,6 @@
 # Folio — エージェント向けメモ
 
-日本語のRSSリーダーです。Cloudflare Workers・D1・Cloudflare Access上で動き、Next.js互換のvinext（Vite）でビルドします。機能と起動手順は `README.md`、本番への配置は `docs/self-host-cloudflare.md`、過去の設計判断は `docs/superpowers/specs/` にあります。
+日本語のRSSリーダーです。Cloudflare Workers・D1・Cloudflare Access上で動き、Next.js互換のvinext（Vite）でビルドします。機能と起動手順は `README.md`、本番への配置は `docs/self-host-cloudflare.md`にあります。`docs/superpowers/`（設計書と実装計画）はGitで管理しないので、手元にあるときだけ参照できます。
 
 ## 完了の条件
 

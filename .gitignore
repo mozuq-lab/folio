@@ -40,5 +40,7 @@ yarn-error.log*
 
 # Superpowers workspace (design mockups, SDD ledgers)
 /.superpowers/
+# 設計書と実装計画（手元だけに置く）
+/docs/superpowers/
 # Playwright MCP screenshots and logs
 /.playwright-mcp/
