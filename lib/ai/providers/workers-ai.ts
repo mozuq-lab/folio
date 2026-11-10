@@ -14,9 +14,18 @@ function classify(error: unknown, model: string): AIError {
   return providerFailure('provider_error', 'workers-ai', model);
 }
 
-// Workers AI may return an object, a JSON string, or a string wrapped in a code fence.
-function parseResponse(result: unknown): unknown {
-  const response = result && typeof result === 'object' ? (result as { response?: unknown }).response : undefined;
+// Workers AI returns either { response } (e.g. Llama) or the OpenAI chat-completions shape { choices: [{ message: { content } }] }
+// (e.g. DeepSeek). Only the final content is read; reasoning text is ignored.
+function contentOf(result: unknown): { content: unknown; truncated: boolean } {
+  if (!result || typeof result !== 'object') return { content: undefined, truncated: false };
+  const record = result as { response?: unknown; choices?: unknown };
+  if (record.response !== undefined) return { content: record.response, truncated: false };
+  const choice = Array.isArray(record.choices) ? record.choices[0] as { finish_reason?: unknown; message?: { content?: unknown } } | undefined : undefined;
+  return { content: choice?.message?.content, truncated: choice?.finish_reason === 'length' };
+}
+
+// The content may be an object, a JSON string, or a string wrapped in a code fence.
+function parseResponse(response: unknown): unknown {
   if (response && typeof response === 'object') return response;
   if (typeof response !== 'string') throw invalidOutput();
   const text = response.trim().replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```$/, '').trim();
@@ -51,7 +60,9 @@ export function createWorkersAIProvider(options: { ai: WorkersAIBinding }): AIPr
         if (request.signal.aborted) throw error;
         throw classify(error, request.model);
       }
-      return { kind: 'ok', json: parseResponse(result) };
+      const { content, truncated } = contentOf(result);
+      if (truncated) return { kind: 'incomplete' };
+      return { kind: 'ok', json: parseResponse(content) };
     },
   };
 }
