@@ -138,3 +138,7 @@
 @media(min-width:601px){.article-compact .article-body{padding-top:5px;padding-bottom:5px;min-height:42px}.article-compact .article-actions .icon-button{height:28px}}
 /* スマートフォンでは一覧の上の文字を11pxにそろえる */
 @media(max-width:600px){.results-meta,.unread-toggle{font-size:11px}}
+/* 並び順のセレクトボックス：フォーカスの枠が文字に接しないよう左右に余白をとる */
+.sort-control select{padding-left:7px;padding-right:16px;border-radius:5px;max-width:96px;outline-offset:0}
+.sort-control>svg:last-child{right:3px}
+@media(max-width:600px){.sort-control select{max-width:86px}}
