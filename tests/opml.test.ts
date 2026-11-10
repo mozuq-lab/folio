@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseOpml, parseOpmlDetailed, exportOpml } from '../lib/opml.ts';
+import type { Feed } from '../lib/types.ts';
 const wrap=(body:string)=>`<?xml version="1.0"?><opml version="2.0"><head><title>Subscriptions</title></head><body>${body}</body></opml>`;
 test('入れ子folderのカテゴリとRSSメタデータを保持する',()=>{
   const feeds=parseOpml(wrap('<outline text="技術"><outline text="AI"><outline type="rss" text="研究 &amp; 実装" xmlUrl="https://example.com/feed" htmlUrl="https://example.com/blog"/></outline></outline>'));
@@ -38,4 +39,13 @@ test('特殊文字を含むfeedのexportを再importして内容を保持する'
   const xml=exportOpml(feeds);const restored=parseOpml(xml);
   assert.equal(restored[0].name,'A "B" <C>');assert.equal(restored[0].category,'技術 & 研究');assert.equal(restored[0].url,'https://example.com/feed?x=1&y=2');assert.equal(restored[0].website,'https://example.com/');
   assert.equal(parseOpml(exportOpml([])).length,0);
+});
+
+test('exportOpml: 分類を渡すとその順で書き出し、複数の分類に入ったフィードは各分類に書き、どこにも無いものは未分類にする', () => {
+  const f = (id: string) => ({ id, name: id, url: `https://${id}.example/feed`, website: `https://${id}.example`, category: 'x', color: '#000', initial: id }) as Feed;
+  const xml = exportOpml([f('a'), f('b'), f('c')], [{ name: '後', feedIds: ['b'] }, { name: '先', feedIds: ['a', 'b'] }]);
+  const order = [...xml.matchAll(/<outline (?:text="([^"]+)">|type="rss" text="([^"]+)")/g)].map(m => m[1] ?? m[2]);
+  assert.deepEqual(order, ['後', 'b', '先', 'a', 'b', '未分類', 'c']);
+  const parsed = parseOpml(xml);
+  assert.deepEqual(parsed.map(feed => [feed.name, feed.category]), [['b', '後'], ['a', '先'], ['c', '未分類']]);
 });

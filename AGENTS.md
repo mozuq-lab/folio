@@ -29,7 +29,7 @@ npm run cloudflare:dry-run
 
 - 提供元は `lib/ai/providers/` に1つずつある。指示文・出力スキーマ・出力の検証（`validateResult`）は `lib/ai.ts` に共通で置き、どの提供元の出力もこの検証を通す。
 - 提供元のエラーは `providerFailure`（`lib/ai/provider-error.ts`）の固定文言で返す。提供元の応答本文やエラーメッセージは分類に使うだけで、利用者向けの文言にもログにも出さない。
-- ブラウザーで動くコード（`components/`、`app/page.tsx`、`lib/ai-settings.ts`）からAI関連で読み込んでよいのは `lib/ai/types.ts` と `lib/ai/selection.ts` だけ。`lib/ai/registry.ts`・`lib/ai/providers/`・`@anthropic-ai/sdk` を読み込むと、SDKがブラウザー用のバンドルに入る。
+- ブラウザーで動くコード（`components/`、`app/page.tsx`、`lib/ai-settings.ts`、`lib/ai-analyze.ts`）からAI関連で読み込んでよいのは `lib/ai/types.ts` と `lib/ai/selection.ts` だけ。`lib/ai/registry.ts`・`lib/ai/providers/`・`@anthropic-ai/sdk` を読み込むと、SDKがブラウザー用のバンドルに入る。
 - 提供元の選び方（自動選択の順番、既定のモデル、推論の深さ）は `lib/ai/selection.ts` と `lib/ai/types.ts` の `PROVIDERS` にまとめてある。サーバーと画面の両方がここを使うので、規則を変えるときはここだけを直す。
 - APIキーはCloudflare Secretにだけ置く（`npm run cloudflare:secret -- <KEY>`）。`.folio/cloudflare.json` やコードには書かない。
 

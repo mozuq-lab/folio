@@ -1,4 +1,5 @@
 import type { AIRequest } from '../intelligence-types.ts';
+import { ANALYZE_BATCH_SIZE } from './types.ts';
 
 export type Schema = {type:'object'|'array'|'string'|'integer';properties?:Record<string,Schema>;required?:string[];additionalProperties?:false;items?:Schema;minItems?:number;maxItems?:number;maxLength?:number;minLength?:number;minimum?:number;maximum?:number;enum?:string[]};
 const string=(maxLength=2000,minLength=1):Schema=>({type:'string',maxLength,minLength});
@@ -10,7 +11,7 @@ const id=string(200);
 const ids=array(id,30,1);
 export function resultSchema(action:AIRequest['action']):Schema {
   switch(action){
-    case 'analyze':return object({kind:enumeration('analyze'),analysis:array(object({articleId:id,interest:integer(0,100),importance:integer(0,100),summary:string(1000),reason:string(500),importanceReason:string(500)}))});
+    case 'analyze':return object({kind:enumeration('analyze'),analysis:array(object({articleId:id,interest:integer(0,100),importance:integer(0,100),summary:string(1000,0),reason:string(500),importanceReason:string(500)}),ANALYZE_BATCH_SIZE*2)});
     case 'preferences':return object({kind:enumeration('preferences'),profile:object({summary:string(1000),boostTerms:array(string(100),30),muteTerms:array(string(100),30),preferredDepth:enumeration('any','introductory','practical','advanced')})});
     case 'digest':return object({kind:enumeration('digest'),digest:object({title:string(200),overview:string(1500),items:array(object({articleId:id,summary:string(1500),takeaway:string(1000),minutes:integer(1,30)})),totalMinutes:integer(0,30),generatedAt:string(50),mode:enumeration('ai')})});
     case 'compare':return object({kind:enumeration('compare'),report:object({overview:string(2000),developments:array(object({text:string(1500),articleIds:ids})),perspectives:array(object({sourceName:string(1000),point:string(1500),articleIds:ids})),uncertainties:array(string(1000))})});

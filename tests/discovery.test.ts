@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Article, Preferences } from '../lib/types.ts';
 import type { ArticleNote, NaturalProfile } from '../lib/intelligence-types.ts';
-import { applyNaturalProfile, buildReadingPlan, clusterStories, visibleStories, recentArticles, scoreImportance, scoreNaturalPreference, searchLibrary, selectExploration } from '../lib/discovery.ts';
+import { applyNaturalProfile, buildReadingPlan, clusterStories, recentArticles, scoreImportance, scoreNaturalPreference, searchLibrary, selectExploration } from '../lib/discovery.ts';
 
 const now = Date.parse('2026-11-06T12:00:00Z');
 const article = (id: string, overrides: Partial<Article> = {}): Article => ({ id, title: '独立した記事 ' + id, description: '', url: 'https://example.com/' + id, sourceId: id, sourceName: id, publishedAt: '2026-11-06T10:00:00Z', tags: [], readingMinutes: 3, ...overrides });
@@ -141,13 +141,4 @@ test('同じページ内の別の項目（#1, #2…）を指す同じフィー�
   const a = article('x', { title: 'まったく別の見出しA', url: 'https://news.example/a#xtor=RSS-1', sourceId: 's1' });
   const b = article('y', { title: '関係のない見出しB', url: 'https://news.example/a', sourceId: 's2' });
   assert.equal(clusterStories([a, b], [], now).length, 1);
-});
-
-test('visibleStories: 既定では2つ以上の媒体のまとまりだけ、指定すればすべてを返す', () => {
-  const cross = clusterStories([article('a', { title: '同じ見出しのニュース', sourceId: 's1' }), article('b', { title: '同じ見出しのニュース', sourceId: 's2' })], [], now);
-  const same = clusterStories([article('c', { title: '別の同じ見出し', sourceId: 's3' }), article('d', { title: '別の同じ見出し', sourceId: 's3' })], [], now);
-  const single = clusterStories([article('e')], [], now);
-  const all = [...cross, ...same, ...single];
-  assert.deepEqual(visibleStories(all, false).map(c => c.articles.length), [2]);
-  assert.equal(visibleStories(all, true).length, 3);
 });

@@ -8,11 +8,16 @@ export function parseCollapsedFolders(raw: string | null): string[] {
   } catch { return []; }
 }
 
+/** 分類の名前を変えたときに、閉じた状態を新しい名前へ引き継ぐ。 */
+export function renameCollapsedFolder(collapsed: string[], from: string, to: string): string[] {
+  return collapsed.map(name => name === from ? to : name);
+}
+
 export function toggleFolder(collapsed: string[], folder: string): string[] {
   return collapsed.includes(folder) ? collapsed.filter(name => name !== folder) : [...collapsed, folder];
 }
 
-const VIEWS = new Set(['for-you', 'digest', 'stories', 'notebook', 'explore', 'all', 'saved']);
+const VIEWS = new Set(['for-you', 'digest', 'notebook', 'explore', 'all', 'saved']);
 
 /** 表示を開くURL。中クリックやコンテキストメニューから別タブで開けるように、リンクの href に使う。 */
 export function viewHref(view: string): string {
@@ -33,4 +38,12 @@ export function parseViewParam(raw: string | null): string | null {
 export function resolveView(chosen: string | null, fromUrl: string | null, feeds: { id: string }[], ready: boolean): string {
   const requested = chosen ?? fromUrl ?? 'for-you';
   return ready && requested.startsWith('feed:') && !feeds.some(feed => `feed:${feed.id}` === requested) ? 'for-you' : requested;
+}
+
+const searchable = (value: string) => value.normalize('NFKC').toLowerCase();
+
+/** フィードの管理の検索。フィード名かURLの一部で絞り込む（大文字小文字・全角半角を区別しない）。空なら全部。 */
+export function filterFeeds<T extends { name: string; url: string }>(feeds: T[], query: string): T[] {
+  const term = searchable(query.trim());
+  return term ? feeds.filter(feed => searchable(feed.name).includes(term) || searchable(feed.url).includes(term)) : feeds;
 }

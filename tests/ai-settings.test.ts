@@ -38,9 +38,9 @@ test('effectiveSelection is null when nothing is chosen or available', () => {
 });
 
 test('clientTimeoutMs adds ten seconds to the server timeout', () => {
-  assert.equal(clientTimeoutMs('medium'), 100_000);
-  assert.equal(clientTimeoutMs('high'), 130_000);
-  assert.equal(clientTimeoutMs('auto'), 55_000);
+  assert.equal(clientTimeoutMs('medium'), 190_000);
+  assert.equal(clientTimeoutMs('high'), 250_000);
+  assert.equal(clientTimeoutMs('auto'), 100_000);
 });
 
 test('updateProvider keeps saved models and efforts', () => {
