@@ -5,7 +5,7 @@ const strings = (v:unknown):v is string[] => Array.isArray(v)&&v.every(x=>typeof
 const weights = (v:unknown) => record(v)&&Object.values(v).every(x=>typeof x==='number'&&Number.isFinite(x));
 const article = (v:unknown):v is Article => record(v)&&['id','title','description','url','sourceId','sourceName','publishedAt'].every(k=>typeof v[k]==='string')&&strings(v.tags)&&typeof v.readingMinutes==='number'&&Number.isFinite(v.readingMinutes)&&(v.image===undefined||typeof v.image==='string');
 const feed = (v:unknown):v is Feed => record(v)&&['id','name','url','website','category','color','initial'].every(k=>typeof v[k]==='string')&&(v.priority===undefined||typeof v.priority==='boolean');
-const preferences = (v:unknown):v is Preferences => record(v)&&strings(v.interests)&&strings(v.mutedTopics)&&weights(v.topicWeights)&&weights(v.sourceWeights)&&typeof v.diversity==='number'&&Number.isFinite(v.diversity);
+const preferences = (v:unknown):v is Preferences => record(v)&&strings(v.interests)&&strings(v.mutedTopics)&&weights(v.topicWeights)&&weights(v.sourceWeights)&&typeof v.diversity==='number'&&Number.isFinite(v.diversity)&&(v.categoryTabs===undefined||strings(v.categoryTabs));
 export function decodeState(raw:string|null,fallback:ReaderState):ReaderState {
   if(!raw)return fallback;
   try { const d:unknown=JSON.parse(raw);

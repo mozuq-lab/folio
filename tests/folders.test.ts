@@ -117,3 +117,14 @@ test('同期データ：AIの評価の tags は任意項目', () => {
   assert.equal(validateSyncDocument({ version: 2, reader, intelligence: analysis({ tags: ['開発'] }), updatedAt: 't' }), true);
   assert.equal(validateSyncDocument({ version: 2, reader, intelligence: analysis({ tags: 'x' }), updatedAt: 't' }), false);
 });
+
+test('同期データ：好みの categoryTabs は任意項目', () => {
+  const prefs = (extra: object) => ({ interests: [], mutedTopics: [], topicWeights: {}, sourceWeights: {}, diversity: 50, ...extra });
+  const reader = (extra: object) => ({ version: 1, articles: [], feeds: [], saved: [], read: [], feedback: {}, preferences: prefs(extra), lastUpdated: null }) as unknown as ReaderState;
+  const doc = (r: ReaderState) => ({ version: 2, reader: r, intelligence: DEFAULT_INTELLIGENCE, updatedAt: 't' });
+  assert.equal(validateSyncDocument(doc(reader({}))), true);
+  assert.equal(validateSyncDocument(doc(reader({ categoryTabs: ['ゲーム'] }))), true);
+  assert.equal(validateSyncDocument(doc(reader({ categoryTabs: 'x' }))), false);
+  const fallback = reader({});
+  assert.deepEqual(decodeState(JSON.stringify(reader({ categoryTabs: ['ゲーム'] })), fallback).preferences.categoryTabs, ['ゲーム']);
+});

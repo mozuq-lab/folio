@@ -29,6 +29,8 @@ export interface Preferences {
   topicWeights: Record<string, number>;
   sourceWeights: Record<string, number>;
   diversity: number;
+  /** 一覧の上のタブに出すトピック。無ければ既定の5つ（lib/topics.ts）。 */
+  categoryTabs?: string[];
 }
 export type Feedback = Record<string, 'like' | 'dislike'>;
 export interface RankedArticle extends Article { score: number; reason: string; }
