@@ -78,10 +78,10 @@ async function fetchIcon(url: string, fetcher: typeof fetch, signal: AbortSignal
   }
 }
 
-/** トップページの <head> から <link rel="...icon..." href="..."> を探す。apple-touch-icon は後回し。 */
-async function iconLinks(site: string, fetcher: typeof fetch, signal: AbortSignal): Promise<string[]> {
+/** トップページの <head> から <link rel="...icon..." href="..."> を探す。icon と apple-touch-icon を分けて返す。 */
+async function iconLinks(site: string, fetcher: typeof fetch, signal: AbortSignal): Promise<{ icons: string[]; touch: string[] }> {
   const fetched = await fetchSafe(`${site}/`, fetcher, signal);
-  if (!fetched) return [];
+  if (!fetched) return { icons: [], touch: [] };
   const html = new TextDecoder().decode(await readPrefix(fetched.response.body, MAX_HTML_BYTES));
   const head = html.slice(0, Math.max(0, html.search(/<\/head>/i)) || html.length);
   const links: { href: string; touch: boolean }[] = [];
@@ -92,14 +92,14 @@ async function iconLinks(site: string, fetcher: typeof fetch, signal: AbortSigna
     if (!value || !/(?:^|\s)(?:icon|shortcut icon|apple-touch-icon)(?:\s|$)/.test(rel) || /\.svg(?:[?#]|$)/i.test(value)) continue;
     try { links.push({ href: new URL(value, fetched.url).href, touch: rel.includes('apple-touch-icon') }); } catch { /* 読めないURLは飛ばす */ }
   }
-  return [...links.filter(link => !link.touch), ...links.filter(link => link.touch)].map(link => link.href).slice(0, 3);
+  return { icons: links.filter(link => !link.touch).map(link => link.href).slice(0, 2), touch: links.filter(link => link.touch).map(link => link.href).slice(0, 1) };
 }
 
 const missing = () => new Response(null, { status: 404, headers: { ...SAFE_HEADERS, 'Cache-Control': `private, max-age=${MISSING_SECONDS}` } });
 const iconResponse = (bytes: Uint8Array, type: string, cacheControl: string) => new Response(bytes as Uint8Array<ArrayBuffer>, { headers: { ...SAFE_HEADERS, 'Content-Type': type, 'Cache-Control': cacheControl } });
 
 /**
- * GET /api/favicon?site=https://example.com のファビコンを返す。/favicon.ico、無ければトップページのアイコン指定を使う。
+ * GET /api/favicon?site=https://example.com のファビコンを返す。トップページのアイコン指定、/favicon.ico、apple-touch-icon の順に使う。
  * 見つからなければ404。Cache APIには利用者に関係なくサイトごとに保存する（見つからなかったことも1日保存する）。
  * 一時的な失敗は保存しない。Cache APIは workers.dev では効かず、そのときはブラウザーのキャッシュだけになる。
  */
@@ -113,7 +113,8 @@ export async function handleFavicon(request: Request, options: { fetcher?: typeo
   } catch {
     return new Response(null, { status: 400, headers: { ...SAFE_HEADERS, 'Cache-Control': 'no-store' } });
   }
-  const key = new Request(`https://favicon.folio.invalid/${encodeURIComponent(site)}`);
+  // 探し方を変えたら版を上げ、前の探し方で保存したものを使わないようにする。
+  const key = new Request(`https://favicon.folio.invalid/v2/${encodeURIComponent(site)}`);
   const cached = await options.cache?.match(key).catch(() => undefined);
   if (cached) {
     if (cached.status !== 200) { await cached.body?.cancel(); return missing(); }
@@ -128,8 +129,9 @@ export async function handleFavicon(request: Request, options: { fetcher?: typeo
     try { return await step(); } catch (error) { if (error instanceof TransientError) { transient = true; return fallback; } throw error; }
   };
   try {
-    icon = await tolerate(() => fetchIcon(`${site}/favicon.ico`, fetcher, signal), null);
-    if (!icon) for (const href of await tolerate(() => iconLinks(site, fetcher, signal), [])) if ((icon = await tolerate(() => fetchIcon(href, fetcher, signal), null))) break;
+    // ページで指定されたアイコンを先に使う（/favicon.ico は中身が空の小さな画像のサイトがある）。
+    const links = await tolerate(() => iconLinks(site, fetcher, signal), { icons: [], touch: [] });
+    for (const href of [...links.icons, `${site}/favicon.ico`, ...links.touch]) if ((icon = await tolerate(() => fetchIcon(href, fetcher, signal), null))) break;
     if (!icon && transient) throw new TransientError();
   } catch {
     // 時間切れ・接続できない・5xxは一時的な失敗かもしれないので、「無い」として保存しない。
