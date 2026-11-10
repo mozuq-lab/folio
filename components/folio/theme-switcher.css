@@ -1,0 +1,9 @@
+/* 配色の切り替え（サイドバーの下部。サイドバーはどちらの配色でも暗い面） */
+.theme-switcher{display:flex;align-items:center;gap:10px;padding:4px 12px 12px;flex-shrink:0}
+.theme-switcher-label{font-size:11px;color:var(--sidebar-muted);white-space:nowrap}
+.theme-options{display:flex;flex:1;gap:2px;padding:2px;border:1px solid var(--sidebar-line);border-radius:7px;background:var(--sidebar-well)}
+.theme-options>button{display:flex;flex:1;align-items:center;justify-content:center;gap:4px;min-height:28px;padding:4px 6px;border-radius:5px;font-size:11px;color:var(--sidebar-ink);white-space:nowrap}
+.theme-options>button:hover{background:var(--sidebar-hover);color:#fff}
+.theme-options>button.active{background:var(--sidebar-active);color:#fff}
+.theme-options>button:focus-visible{outline:2px solid var(--sidebar-focus);outline-offset:1px}
+@media(max-width:760px){.theme-options>button{min-height:32px}}
