@@ -39,7 +39,7 @@ export function FeedAddForm({feeds,onAdd,notice='',onEdit}:{feeds:Feed[];onAdd:(
  };
  const submit=(e:React.FormEvent)=>{
   e.preventDefault();if(pending!==null)return;setError('');setFound(null);onEdit?.();
-  let normalized:string;try{normalized=new URL(url.trim()).href;}catch{setError('https:// から始まるURLを入力してください。');return;}
+  let normalized:string;try{normalized=new URL(url.trim()).href;}catch{setError('http:// または https:// から始まるURLを入力してください。');return;}
   if(isSubscribed(feeds,normalized)){setError('このフィードはすでに購読しています。');return;}
   void lookup(normalized,true,FORM);
  };

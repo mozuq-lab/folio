@@ -34,12 +34,12 @@ export function feedErrorKind(error: unknown): FeedErrorKind {
   return 'format';
 }
 
-/** Only public HTTPS destinations are accepted, including on every redirect. */
+/** Only public HTTP(S) destinations on the default port are accepted, including on every redirect. */
 export function isSafeFeedUrl(raw: string): boolean {
   if (typeof raw !== 'string' || /[\u0000-\u0020\u007f]/.test(raw)) return false;
   try {
     const url = new URL(raw);
-    if (url.protocol !== 'https:' || url.username || url.password || url.port) return false;
+    if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password || url.port) return false;
     const host = url.hostname.toLowerCase().replace(/\.$/, '');
     // IPv6 literals are intentionally excluded; feed hosts should use a public DNS name.
     if (!host || host.includes(':') || !host.includes('.')) return false;
@@ -265,13 +265,13 @@ async function requestFeed(
   const headers: Record<string, string> = { Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1' };
   if (options.etag) headers['If-None-Match'] = options.etag;
   if (options.lastModified) headers['If-Modified-Since'] = options.lastModified;
-  if (!isSafeFeedUrl(feedUrl)) throw new FeedError('公開されたHTTPSのRSS URLを入力してください。', 400);
+  if (!isSafeFeedUrl(feedUrl)) throw new FeedError('公開されたRSSのURL（http:// または https://）を入力してください。', 400);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   let currentUrl = new URL(feedUrl).href;
   try {
     for (let redirects = 0; redirects <= 3; redirects++) {
-      if (!isSafeFeedUrl(currentUrl)) throw new FeedError('安全な公開HTTPS URLへのリダイレクトのみ読み込めます。', 400);
+      if (!isSafeFeedUrl(currentUrl)) throw new FeedError('安全な公開URLへのリダイレクトのみ読み込めます。', 400);
       const response = await fetcher(currentUrl, {
         redirect: 'manual', signal: controller.signal,
         headers,

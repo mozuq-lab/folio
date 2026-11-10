@@ -24,7 +24,8 @@ function memoryCache(): FaviconCache & { store: Map<string, Response> } {
 test('faviconSrc: サイトのURL（無ければフィードのURL）のオリジンで /api/favicon を指す', () => {
   assert.equal(faviconSrc({ website: 'https://example.com/blog/', url: 'https://feeds.example.net/rss' }), '/api/favicon?site=https%3A%2F%2Fexample.com&v=2');
   assert.equal(faviconSrc({ website: 'not a url', url: 'https://feeds.example.net/rss' }), '/api/favicon?site=https%3A%2F%2Ffeeds.example.net&v=2');
-  assert.equal(faviconSrc({ website: 'http://example.com', url: 'http://x.example/feed' }), null);
+  assert.equal(faviconSrc({ website: 'http://example.com/', url: 'http://x.example/feed' }), '/api/favicon?site=http%3A%2F%2Fexample.com&v=2');
+  assert.equal(faviconSrc({ website: 'ftp://example.com', url: 'not a url' }), null);
 });
 
 test('ページにアイコン指定が無ければ /favicon.ico を返し、型・キャッシュ・安全のヘッダーを付けてCache APIにも保存する', async () => {
@@ -68,9 +69,9 @@ test('SVG・HTML・大きすぎる画像は使わず、見つからなければ4
   assert.match(res.headers.get('cache-control') ?? '', /max-age=86400/);
 });
 
-test('公開されたHTTPSのオリジン以外は400で、配信元には行かない', async () => {
+test('公開されたHTTP(S)のオリジン以外は400で、配信元には行かない', async () => {
   const { fetcher, calls } = fetcherOf({});
-  for (const site of ['http://example.com', 'https://localhost', 'https://10.0.0.1', 'https://example.com/path', 'https://example.com?x=1', 'not a url', '']) {
+  for (const site of ['ftp://example.com', 'http://localhost', 'http://example.com:8080', 'https://localhost', 'https://10.0.0.1', 'https://example.com/path', 'https://example.com?x=1', 'not a url', '']) {
     assert.equal((await handleFavicon(req(site), { fetcher })).status, 400, site);
   }
   assert.equal((await handleFavicon(new Request('https://folio.example/api/favicon'), { fetcher })).status, 400);
@@ -80,10 +81,10 @@ test('公開されたHTTPSのオリジン以外は400で、配信元には行か
 test('安全でないURLへの転送やHTML内のリンクは追わない', async () => {
   const { fetcher, calls } = fetcherOf({
     'https://example.com/favicon.ico': () => new Response(null, { status: 302, headers: { location: 'https://127.0.0.1/favicon.ico' } }),
-    'https://example.com/': () => new Response('<link rel="icon" href="http://example.com/i.png">', { headers: { 'content-type': 'text/html' } }),
+    'https://example.com/': () => new Response('<link rel="icon" href="http://127.0.0.1/i.png">', { headers: { 'content-type': 'text/html' } }),
   });
   assert.equal((await handleFavicon(req('https://example.com'), { fetcher })).status, 404);
-  assert.ok(!calls.some(url => url.includes('127.0.0.1') || url.startsWith('http:')));
+  assert.ok(!calls.some(url => url.includes('127.0.0.1')));
 });
 
 test('一時的な失敗（時間切れ・5xx・接続できない）は「無い」としてキャッシュしない', async () => {

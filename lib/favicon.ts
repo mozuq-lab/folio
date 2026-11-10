@@ -25,7 +25,7 @@ function imageType(bytes: Uint8Array): string | null {
   return null;
 }
 
-/** 安全な公開HTTPSのURLだけをたどる（転送は3回まで）。たどれなければ null。 */
+/** 安全な公開HTTP(S)のURLだけをたどる（転送は3回まで）。たどれなければ null。 */
 async function fetchSafe(url: string, fetcher: typeof fetch, signal: AbortSignal): Promise<{ response: Response; url: string } | null> {
   let current = url;
   for (let redirects = 0; redirects <= 3; redirects++) {

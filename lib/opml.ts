@@ -3,14 +3,14 @@ import type { Feed } from './types.ts';
 
 const MAX_BYTES=1024*1024;
 const MAX_FEEDS=500;
-const invalid=()=>new Error('OPMLの形式が正しくありません。公開HTTPSのフィードを含むファイルを選んでください。');
+const invalid=()=>new Error('OPMLの形式が正しくありません。公開されたフィードを含むファイルを選んでください。');
 
 // Keep this browser module free of feed fetching/server dependencies.
 function safeUrl(raw:string):boolean {
   if(/[\u0000-\u0020\u007f]/.test(raw)) return false;
   try {
     const url=new URL(raw);
-    if(url.protocol!=='https:'||url.username||url.password||url.port) return false;
+    if((url.protocol!=='https:'&&url.protocol!=='http:')||url.username||url.password||url.port) return false;
     const host=url.hostname.toLowerCase().replace(/\.$/,'');
     if(!host||host.includes(':')||!host.includes('.')||/(?:^|\.)(localhost|local|internal|lan|home|home\.arpa|localdomain|corp|test|invalid)$/.test(host)) return false;
     if(/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
@@ -24,19 +24,13 @@ function normalize(raw:string):string {
   if(!safeUrl(raw)) throw invalid();
   const url=new URL(raw);url.hash='';url.hostname=url.hostname.toLowerCase().replace(/\.$/,'');return url.href;
 }
-/** Old subscriptions often still use http://. Read them as https:// (Folio only fetches HTTPS feeds). */
-function upgradeToHttps(raw:string):string|null {
-  if(!/^http:\/\//i.test(raw)) return null;
-  try { const url=new URL(raw);url.protocol='https:';return url.href; } catch { return null; }
-}
-function acceptUrl(raw:string):{url:string;upgraded:boolean}|null {
-  if(safeUrl(raw)) return {url:normalize(raw),upgraded:false};
-  const upgraded=upgradeToHttps(raw);
-  return upgraded&&safeUrl(upgraded)?{url:normalize(upgraded),upgraded:true}:null;
+/** http:// のフィードはそのまま取り込む（https に対応していないサイトがあるため、読み替えない）。 */
+function acceptUrl(raw:string):string|null {
+  return safeUrl(raw)?normalize(raw):null;
 }
 export type SkippedFeed = { name:string; url:string; reason:string };
-export type OpmlImport = { feeds:Feed[]; skipped:SkippedFeed[]; upgraded:number };
-const UNSAFE_REASON='公開されたHTTPSのURLとして読み込めません';
+export type OpmlImport = { feeds:Feed[]; skipped:SkippedFeed[] };
+const UNSAFE_REASON='公開されたURLとして読み込めません';
 const LIMIT_REASON=`一度に取り込めるのは${MAX_FEEDS}件までです`;
 const record=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
 const list=(value:unknown):unknown[]=>value==null?[]:Array.isArray(value)?value:[value];
@@ -60,7 +54,7 @@ export function parseOpmlDetailed(xml:string):OpmlImport {
   if(!Object.hasOwn(parsed,'opml')) throw invalid();
   const opml=record(parsed.opml);
   if(!Object.hasOwn(opml,'body')) throw invalid();
-  const feeds:Feed[]=[];const skipped:SkippedFeed[]=[];const seen=new Set<string>();let visited=0;let upgraded=0;
+  const feeds:Feed[]=[];const skipped:SkippedFeed[]=[];const seen=new Set<string>();let visited=0;
   const walk=(outlines:unknown,folders:string[],depth:number)=>{
     if(depth>50) throw invalid();
     for(const raw of list(outlines)) {
@@ -71,15 +65,14 @@ export function parseOpmlDetailed(xml:string):OpmlImport {
       if(Object.hasOwn(outline,'@_xmlUrl')) {
         const accepted=acceptUrl(rawUrl);
         if(!accepted) skipped.push({name:title||rawUrl,url:rawUrl,reason:UNSAFE_REASON});
-        else if(!seen.has(accepted.url)) {
-          if(feeds.length>=MAX_FEEDS) skipped.push({name:title||rawUrl,url:accepted.url,reason:LIMIT_REASON});
+        else if(!seen.has(accepted)) {
+          if(feeds.length>=MAX_FEEDS) skipped.push({name:title||rawUrl,url:accepted,reason:LIMIT_REASON});
           else {
-            seen.add(accepted.url);
-            if(accepted.upgraded) upgraded++;
-            const url=accepted.url;
+            seen.add(accepted);
+            const url=accepted;
             const name=title||new URL(url).hostname;
             const website=acceptUrl(text(outline['@_htmlUrl']));
-            feeds.push({id:feedId(url),name,url,website:website?website.url:new URL(url).origin,category:folders.join(' / ')||'未分類',color:'#507b65',initial:Array.from(name)[0]||'F'});
+            feeds.push({id:feedId(url),name,url,website:website??new URL(url).origin,category:folders.join(' / ')||'未分類',color:'#507b65',initial:Array.from(name)[0]||'F'});
           }
         }
       }
@@ -87,7 +80,7 @@ export function parseOpmlDetailed(xml:string):OpmlImport {
     }
   };
   walk(record(opml.body).outline,[],0);
-  return {feeds,skipped,upgraded};
+  return {feeds,skipped};
 }
 function escapeXml(value:string):string {
   return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[char]!));

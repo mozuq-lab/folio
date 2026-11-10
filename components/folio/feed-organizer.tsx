@@ -149,7 +149,7 @@ function FeedRow({ feed, folders, fetchStates, showFetchStates, stats, onToggleP
     <FeedIcon feed={feed} />
     <div className="manage-feed-info">
       <strong>{feed.name}</strong>
-      {/^https:\/\//i.test(feed.url) ? <a className="feed-url" href={feed.url} target="_blank" rel="noopener noreferrer">{feed.url}</a> : <span>{feed.url}</span>}
+      {/^https?:\/\//i.test(feed.url) ? <a className="feed-url" href={feed.url} target="_blank" rel="noopener noreferrer">{feed.url}</a> : <span>{feed.url}</span>}
       {showFetchStates && <span className="feed-fetch-state">{formatFetchState(fetchStates[feed.id], new Date())}</span>}
       {stats && <span className="feed-fetch-state">{formatFeedStat(stats.get(feed.id))}</span>}
       {choosing && <fieldset className="folder-choices"><legend>{feed.name}の分類</legend>

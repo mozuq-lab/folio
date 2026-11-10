@@ -11,20 +11,19 @@ test('URLの表記差を正規化し重複を除外する',()=>{
   const feeds=parseOpml(wrap('<outline xmlUrl="https://EXAMPLE.com:443/feed#one"/><outline xmlUrl="https://example.com/feed#two"/>'));
   assert.equal(feeds.length,1);assert.equal(feeds[0].url,'https://example.com/feed');
 });
-test('httpのフィードとサイトURLはhttpsに読み替えて取り込み、件数を返す',()=>{
+test('httpのフィードとサイトURLは読み替えずにそのまま取り込む',()=>{
   const result=parseOpmlDetailed(wrap('<outline text="セキュリティ"><outline type="rss" text="JPCERT" xmlUrl="http://www.jpcert.or.jp/rss/jpcert.rdf" htmlUrl="http://www.jpcert.or.jp/"/></outline><outline xmlUrl="https://example.com/feed"/>'));
-  assert.deepEqual(result.feeds.map(f=>f.url),['https://www.jpcert.or.jp/rss/jpcert.rdf','https://example.com/feed']);
-  assert.equal(result.feeds[0].website,'https://www.jpcert.or.jp/');assert.equal(result.feeds[0].category,'セキュリティ');
-  assert.equal(result.upgraded,1);assert.deepEqual(result.skipped,[]);
-  assert.equal(parseOpml(wrap('<outline xmlUrl="http://example.com/rss"/>'))[0].url,'https://example.com/rss');
+  assert.deepEqual(result.feeds.map(f=>f.url),['http://www.jpcert.or.jp/rss/jpcert.rdf','https://example.com/feed']);
+  assert.equal(result.feeds[0].website,'http://www.jpcert.or.jp/');assert.equal(result.feeds[0].category,'セキュリティ');
+  assert.deepEqual(result.skipped,[]);
+  assert.equal(parseOpml(wrap('<outline xmlUrl="http://EXAMPLE.com:80/rss#x"/>'))[0].url,'http://example.com/rss');
 });
 test('危険・非公開のURLは取り込まず、名前と理由を返して残りを取り込む',()=>{
   const bad=['javascript:alert(1)','https://127.0.0.1/rss','http://10.0.0.1/rss','https://[::1]/rss','https://user:pass@example.com/rss','https://localhost/rss','https://example.internal/rss','https://example.com:8443/rss','http://example.com:8080/rss','ftp://example.com/rss'];
   const result=parseOpmlDetailed(wrap(bad.map((url,i)=>`<outline text="bad${i}" xmlUrl="${url}"/>`).join('')+'<outline text="ok" xmlUrl="https://example.com/ok"/>'));
   assert.deepEqual(result.feeds.map(f=>f.url),['https://example.com/ok']);
   assert.equal(result.skipped.length,bad.length);
-  assert.deepEqual(result.skipped[0],{name:'bad0',url:'javascript:alert(1)',reason:'公開されたHTTPSのURLとして読み込めません'});
-  assert.equal(result.upgraded,0);
+  assert.deepEqual(result.skipped[0],{name:'bad0',url:'javascript:alert(1)',reason:'公開されたURLとして読み込めません'});
 });
 test('DOCTYPE、entity、壊れたXMLとOPML以外はファイル全体を拒否する',()=>{
   for(const xml of ['<!DOCTYPE opml [<!ENTITY x SYSTEM "file:///etc/passwd">]>'+wrap('<outline text="&x;"/>'),'<opml><body>','<rss><channel/></rss>']) { assert.throws(()=>parseOpml(xml));assert.throws(()=>parseOpmlDetailed(xml)); }

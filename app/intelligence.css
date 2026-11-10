@@ -12,7 +12,6 @@
 .opml-skipped li{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--d-100)}
 .opml-skipped li>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .opml-skipped li>small{flex-shrink:0;color:var(--n-500)}
-.opml-preview>.opml-note{color:var(--n-600)}
 
 /* 文字を読みやすく */
 .ranking-explainer{color:var(--n-600)}
