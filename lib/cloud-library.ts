@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { EFFORTS, MODEL_ID_PATTERN, PROVIDER_IDS } from './ai/types.ts';
 import type { CloudLibrary, SyncDocument } from './intelligence-types.ts';
+import { MAX_EVER_SAVED } from './saved-history.ts';
 
 export const MAX_LIBRARY_BYTES = 4 * 1024 * 1024;
 const string = z.string();
@@ -10,7 +11,7 @@ const score = finite.min(0).max(100);
 export const articleSchema = z.object({ id:string,title:string,description:string,url:string,image:string.optional(),sourceId:string,sourceName:string,publishedAt:string,tags:strings,readingMinutes:finite.min(0),isSample:z.boolean().optional(),content:string.optional(),contentFetchedAt:string.optional() }).strict();
 const feed = z.object({ id:string,name:string,url:string,website:string,category:string,color:string,initial:string,priority:z.boolean().optional() }).strict();
 const preferences = z.object({ interests:strings,mutedTopics:strings,topicWeights:z.record(finite),sourceWeights:z.record(finite),diversity:score,categoryTabs:strings.max(50).optional() }).strict();
-const reader = z.object({ version:z.literal(1),articles:z.array(articleSchema),feeds:z.array(feed),saved:strings,read:strings,backlogMigratedAt:string.optional(),folders:z.array(z.object({ name:z.string().min(1).max(200),feedIds:strings.max(1000) }).strict()).max(200).optional(),feedback:z.record(z.enum(['like','dislike'])),preferences,lastUpdated:string.nullable() }).strict();
+const reader = z.object({ version:z.literal(1),articles:z.array(articleSchema),feeds:z.array(feed),saved:strings,read:strings,backlogMigratedAt:string.optional(),folders:z.array(z.object({ name:z.string().min(1).max(200),feedIds:strings.max(1000) }).strict()).max(200).optional(),everSaved:z.array(z.object({ id:string,at:string }).strict()).max(MAX_EVER_SAVED).optional(),feedback:z.record(z.enum(['like','dislike'])),preferences,lastUpdated:string.nullable() }).strict();
 const profile = z.object({ summary:string,boostTerms:strings,muteTerms:strings,preferredDepth:z.enum(['any','introductory','practical','advanced']) }).strict();
 const analysis = z.object({ articleId:string,interest:score,importance:score,summary:string,reason:string,importanceReason:string,tags:z.array(z.string().max(40)).max(5).optional() }).strict();
 const note = z.object({ id:string,articleId:string,quote:string,body:string,createdAt:string,updatedAt:string }).strict();
