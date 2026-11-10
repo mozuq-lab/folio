@@ -1,17 +1,6 @@
 import type { Article, Feed, Preferences } from './types.ts';
 
-export const TOPICS = [
-  'AI・機械学習',
-  'デザイン',
-  'テクノロジー',
-  '開発',
-  'スタートアップ',
-  'ビジネス',
-  'プロダクト',
-  'サイエンス',
-  'カルチャー',
-  '暮らし',
-];
+export { TOPICS } from './topics.ts';
 
 export const INITIAL_FEEDS: Feed[] = [
   { id: 'zenn', name: 'Zenn', url: 'https://zenn.dev/feed', website: 'https://zenn.dev', category: '開発', color: '#3EA8FF', initial: 'Z' },

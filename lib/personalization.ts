@@ -4,9 +4,14 @@ import {rankArticles} from './recommendations.ts';
 import {applyNaturalProfile,scoreNaturalPreference,scoreImportance} from './discovery.ts';
 export interface IntelligentArticle extends RankedArticle { importance:number; importanceReason:string; isExploration:boolean; aiAnalyzed:boolean; aiSummary?:string; interestScore:number; }
 const bounded=(v:number)=>Math.min(99,Math.max(0,Math.round(Number.isFinite(v)?v:0)));
+/** AIで評価した記事は、言葉の規則で付けたタグの代わりにAIが付けたタグを使う（以前の評価でタグが無ければそのまま）。 */
+export function withAITags<T extends Article>(articles:T[],analysis:IntelligenceState['analysis']):T[]{
+ return articles.map(a=>{const tags=analysis[a.id]?.tags;return tags?{...a,tags}:a;});
+}
 export function rankPersonalized(articles:Article[],preferences:Preferences,feedback:Feedback,intelligence:IntelligenceState,includeHidden=false):IntelligentArticle[]{
  const prefs=includeHidden?{...preferences,mutedTopics:[]}:preferences;
- const candidates=includeHidden?articles:applyNaturalProfile(articles,intelligence.profile);
+ const withTags=withAITags(articles,intelligence.analysis);
+ const candidates=includeHidden?withTags:applyNaturalProfile(withTags,intelligence.profile);
  const ranked=rankArticles(candidates,prefs,includeHidden?{}:feedback);
  return ranked.map(a=>{
   const ai=intelligence.analysis[a.id];const impact=scoreImportance(a,articles);const natural=includeHidden?0:scoreNaturalPreference(a,intelligence.profile);

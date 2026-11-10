@@ -70,7 +70,8 @@ test('記事のjavascriptリンクとHTTPS以外の画像を除外する', () =>
   assert.equal(articles.length, 1);
   assert.equal(articles[0].url, 'http://example.com/article');
   assert.equal(articles[0].image, undefined);
-  assert.deepEqual(articles[0].tags, ['テクノロジー']);
+  // どのトピックにも当てはまらない記事にはタグを付けない。
+  assert.deepEqual(articles[0].tags, []);
 });
 
 test('linkなしの記事では絶対URLのpermalink GUIDだけを採用する', () => {
@@ -262,4 +263,9 @@ test('feedErrorKindは失敗を種類に分ける', async () => {
   assert.equal((http as FeedError).status, 502);
   assert.equal(feedErrorKind(http), 'http');
   assert.doesNotMatch((http as FeedError).message, /secret/);
+});
+
+test('フィードの分類はトピックに当てはまらなければ「未分類」にする', () => {
+  const xml = '<rss><channel><title>今日の天気</title><item><title>晴れ</title><link>https://example.com/a</link></item></channel></rss>';
+  assert.equal(parseFeed(xml, 'https://example.com/feed').feed.category, '未分類');
 });

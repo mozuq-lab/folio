@@ -23,7 +23,7 @@ import { loadContent, saveContent } from '@/lib/backlog/client-db';
 import { useArticleLayout } from '@/hooks/use-article-layout';
 import type { ArticleLayout } from '@/lib/article-layout';
 import { LoadMoreSentinel } from '@/components/folio/load-more-sentinel';
-import { rankPersonalized, mixExploration, toArticle } from '@/lib/personalization';
+import { rankPersonalized, mixExploration, toArticle, withAITags } from '@/lib/personalization';
 import type { IntelligentArticle } from '@/lib/personalization';
 import { selectExploration, applyNaturalProfile } from '@/lib/discovery';
 import type { AIRequest, AIResult, SyncDocument } from '@/lib/intelligence-types';
@@ -157,7 +157,9 @@ export default function Home(){
  const libraryIds=useMemo(()=>new Set(state.articles.map(a=>a.id)),[state.articles]);
  const viewArticles=useMemo(()=>mergeViewArticles(state.articles,backlogArticles,state.feeds),[state.articles,backlogArticles,state.feeds]);
  const readSet=useMemo(()=>mergeReadIds(state.read,backlogReadIds),[state.read,backlogReadIds]);
- const reader=useMemo<ReaderState>(()=>({...state,articles:viewArticles,read:[...readSet]}),[state,viewArticles,readSet]);
+  // AIで評価した記事はAIのタグで扱う（新しい発見やAI画面でも同じタグにする）。
+ const taggedArticles=useMemo(()=>withAITags(viewArticles,intelligence.analysis),[viewArticles,intelligence.analysis]);
+ const reader=useMemo<ReaderState>(()=>({...state,articles:taggedArticles,read:[...readSet]}),[state,taggedArticles,readSet]);
  const viewById=useMemo(()=>new Map(viewArticles.map(a=>[a.id,a])),[viewArticles]);
  const backlogIds=useMemo(()=>new Set(backlogArticles.map(a=>a.id)),[backlogArticles]);const backlogRef=useRef({ids:backlogIds,read:backlogReadIds});useEffect(()=>{backlogRef.current={ids:backlogIds,read:backlogReadIds};},[backlogIds,backlogReadIds]);
  const unreadCounts=useMemo(()=>{const byFeed=new Map<string,number>();let total=0;for(const a of viewArticles){if(readSet.has(a.id))continue;byFeed.set(a.sourceId,(byFeed.get(a.sourceId)||0)+1);if(state.feedback[a.id]!=='dislike')total++;}return {byFeed,total};},[viewArticles,readSet,state.feedback]);
@@ -167,9 +169,9 @@ export default function Home(){
  const baseRanked=useMemo(()=>rankPersonalized(viewArticles,state.preferences,state.feedback,intelligence,includeHidden),[viewArticles,state.preferences,state.feedback,intelligence.analysis,intelligence.profile,includeHidden]);
  const forYouRanked=useMemo(()=>{
   if(view!=='for-you')return baseRanked;
-  const discoveries=selectExploration(applyNaturalProfile(viewArticles,intelligence.profile),state.preferences,state.feedback,10,baseRanked.slice(0,6).map(a=>a.id));
+  const discoveries=selectExploration(applyNaturalProfile(taggedArticles,intelligence.profile),state.preferences,state.feedback,10,baseRanked.slice(0,6).map(a=>a.id));
   return mixExploration(baseRanked,discoveries,intelligence.exploration);
- },[baseRanked,view,intelligence.exploration,intelligence.profile,viewArticles,state.preferences,state.feedback]);
+ },[baseRanked,view,intelligence.exploration,intelligence.profile,taggedArticles,state.preferences,state.feedback]);
  // For You は未読を候補に並べ、並びを固定する。既読にした記事は並び直すまで残し、届いた記事は件数だけ知らせる。
  const forYouCandidates=useMemo(()=>view==='for-you'?forYouRanked.filter(a=>!readSet.has(a.id)):[],[view,forYouRanked,readSet]);
  const frozenNext=useMemo(()=>freezeOrder(settled?frozen:null,forYouCandidates,refreshToken),[settled,frozen,forYouCandidates,refreshToken]);

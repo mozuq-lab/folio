@@ -20,3 +20,13 @@ test('表示用の評価値をAPI送信や記事保存に混入させない',asy
  const reader={version:1 as const,articles:[clean],feeds:[],saved:[],read:[],feedback:{},preferences,lastUpdated:null};
  assert.equal(validateSyncDocument({version:2,reader,intelligence:DEFAULT_INTELLIGENCE,updatedAt:new Date().toISOString()}),true);
 });
+
+test('AIで評価した記事は、規則のタグの代わりにAIのタグを使う', () => {
+  const tagged = { ...DEFAULT_INTELLIGENCE, analysis: { a: { articleId: 'a', interest: 50, importance: 50, summary: '', reason: 'r', importanceReason: 'i', tags: ['カルチャー'] } } };
+  const article = { id: 'a', title: '見出し', description: '', url: 'https://e.com/a', sourceId: 's', sourceName: 'S', publishedAt: '2026-11-09T00:00:00Z', tags: ['テクノロジー'], readingMinutes: 3 };
+  const [ranked] = rankPersonalized([article], { interests: [], mutedTopics: [], topicWeights: {}, sourceWeights: {}, diversity: 0 }, {}, tagged);
+  assert.deepEqual(ranked.tags, ['カルチャー']);
+  // AIのタグが無い（以前の評価）ときは規則のタグのまま。
+  const old = { ...DEFAULT_INTELLIGENCE, analysis: { a: { articleId: 'a', interest: 50, importance: 50, summary: '', reason: 'r', importanceReason: 'i' } } };
+  assert.deepEqual(rankPersonalized([article], { interests: [], mutedTopics: [], topicWeights: {}, sourceWeights: {}, diversity: 0 }, {}, old)[0].tags, ['テクノロジー']);
+});
