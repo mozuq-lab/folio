@@ -147,3 +147,5 @@
 .source-avatar{background-image:var(--tile-shade)}.sidebar button:focus-visible,.sidebar a:focus-visible{outline-color:var(--sidebar-focus)}
 /* 低い画面では、フィードの一覧だけでなくサイドバー全体をスクロールさせる（下の利用者名の行が枠の外に出ないように） */
 @media(max-height:680px){.sidebar{overflow-y:auto}.sidebar .feed-nav{flex:none;min-height:0;overflow:visible}}
+/* 記事一覧の見出しと「すべて既読にする」などの操作は、スクロールしても画面の上に張り付ける。上下の余白を背景で覆い、下の記事が透けないようにする */
+.list-toolbar{position:sticky;top:0;z-index:10;display:flow-root;background:var(--background);padding-top:12px;margin-top:-12px}
