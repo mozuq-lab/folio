@@ -152,3 +152,8 @@
 /* コンパクト表示で一覧の幅が狭いときは、見出しを1行目、媒体名と操作（興味あり・興味なしなど）を2行目に分け、見出しが読めないほど細くならないようにする */
 .articles-grid.compact-layout{container-type:inline-size}
 @container (max-width:700px){.article-compact .article-body{grid-template-columns:minmax(0,1fr) auto;gap:3px 8px}.article-compact .article-title-button{grid-column:1/-1;grid-row:1}.article-compact .article-source{grid-column:1;grid-row:2}.article-compact .article-footer{grid-column:2;grid-row:2}}
+/* 選んでいる分類は、選んでいるフィードと同じように背景を明るくする */
+.sidebar .folder-button{border-radius:5px}.sidebar .folder-button.active{background:var(--sidebar-active);color:#fff}
+/* スマホ表示では上部バー（メニューボタン）を画面の上に張り付け、下へスクロールしている間だけ隠す。記事一覧の見出しは上部バーのすぐ下に張り付ける。
+   キーボードで上部バーを操作している間（検索の入力中を含む）は隠さず、見出しもその下に置く。タップしたボタンに残るフォーカスでは隠す */
+@media(max-width:760px){.topbar{position:sticky;top:0;z-index:20;transition:transform .2s ease;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}.list-toolbar{top:56px;transition:top .2s ease}.workspace[data-topbar-hidden] .topbar:not(:has(:focus-visible)){transform:translateY(-100%)}.workspace[data-topbar-hidden]:not(:has(.topbar :focus-visible)) .list-toolbar{top:0}}

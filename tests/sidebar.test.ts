@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { COLLAPSED_FOLDERS_KEY, filterFeeds, parseCollapsedFolders, renameCollapsedFolder, parseViewParam, resolveView, toggleFolder, viewHref } from '../lib/sidebar.ts';
+import { COLLAPSED_FOLDERS_KEY, filterFeeds, folderOfView, folderView, renameFolderView, parseCollapsedFolders, renameCollapsedFolder, parseViewParam, resolveView, toggleFolder, viewHref } from '../lib/sidebar.ts';
 
 test('閉じたフォルダの保存値を読み取り、壊れた値は空にする', () => {
   assert.equal(COLLAPSED_FOLDERS_KEY, 'folio.collapsedFolders');
@@ -51,4 +51,31 @@ test('filterFeeds: フィード名かURLの一部で、大文字小文字と全�
 test('renameCollapsedFolder: 閉じたフォルダの名前を変え、無ければそのまま', () => {
   assert.deepEqual(renameCollapsedFolder(['A', 'B'], 'A', 'C'), ['C', 'B']);
   assert.deepEqual(renameCollapsedFolder(['B'], 'A', 'C'), ['B']);
+});
+
+test('分類の表示：URLに分類名を入れて開き直せる。空や長すぎる名前、改行は受け付けない', () => {
+  assert.equal(folderView('テクノロジー'), 'folder:テクノロジー');
+  assert.equal(folderOfView('folder:テクノロジー'), 'テクノロジー');
+  assert.equal(folderOfView('feed:a'), null);
+  assert.equal(folderOfView('all'), null);
+  for (const name of ['テクノロジー', '未分類', 'AI と ML', 'a/b?c&d']) {
+    const view = folderView(name);
+    assert.equal(parseViewParam(new URL(`https://folio.example${viewHref(view)}`).searchParams.get('view')), view);
+  }
+  for (const raw of ['folder:', 'folder:' + 'x'.repeat(201), 'folder:a\nb']) assert.equal(parseViewParam(raw), null);
+});
+
+test('resolveView: 無い分類は読み込み後だけ For You に戻す', () => {
+  const feeds = [{ id: 'a' }];
+  assert.equal(resolveView(null, 'folder:開発', feeds, true, ['開発', '未分類']), 'folder:開発');
+  assert.equal(resolveView(null, 'folder:消した分類', feeds, true, ['開発']), 'for-you');
+  assert.equal(resolveView('folder:未分類', null, feeds, true, ['開発', '未分類']), 'folder:未分類');
+  assert.equal(resolveView(null, 'folder:開発', [], false, []), 'folder:開発');
+});
+
+test('renameFolderView: 選んでいる分類の名前を変えたら、表示を新しい名前に引き継ぐ', () => {
+  assert.equal(renameFolderView('folder:開発', '開発', 'Dev'), 'folder:Dev');
+  assert.equal(renameFolderView('folder:デザイン', '開発', 'Dev'), 'folder:デザイン');
+  assert.equal(renameFolderView('feed:開発', '開発', 'Dev'), 'feed:開発');
+  assert.equal(renameFolderView('all', '開発', 'Dev'), 'all');
 });
