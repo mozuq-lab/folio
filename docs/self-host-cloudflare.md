@@ -96,6 +96,21 @@ Workers AIはキーが不要です。バインディング `AI` が配置のた�
 
 期限切れのキーは使用できません。キー未設定でもRSS閲覧・ローカル推薦・ノート・同期は利用できます。AIの既定モデルは提供元ごとに決まっています（OpenAI `gpt-6-luna`、Claude `claude-haiku-5-5`、OpenRouter `openai/gpt-6-luna`、Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast`）。提供元・モデル・推論の深さは画面で変更できます。`OPENAI_MODEL` は廃止しました。各提供元の管理画面で、利用額の上限を設定してください。
 
+### AIが失敗したときのログ
+
+AIの処理が失敗すると、Workerは `event: "ai_failure"` の記録を1件出します。記録はCloudflareのダッシュボードの「Workers & Pages」→ Worker →「Logs」で確認できます。配置の設定でWorkers Logsを有効にしています。保存するのはこの記録のようにWorkerが出したものだけで、リクエストごとの記録（URLなど）は保存しません。ログを見られるのはCloudflareアカウントにログインできる人だけで、保存期間は無料プランで3日です。
+
+| 項目 | 内容 |
+|---|---|
+| `action` | 操作（`digest` は要約、`analyze` は評価など） |
+| `provider` / `model` / `effort` | 使った提供元・モデル・推論の深さ |
+| `code` | 画面に返したエラーの種類（`invalid_output`、`timeout` など） |
+| `reason` | 出力を受け付けなかった理由（`digest_over_budget` は予算超過、`digest_total_mismatch` は合計時間の不一致、`schema_mismatch` は形式の誤りなど） |
+| `detail` | `schema_mismatch` のとき、合わなかった場所と種類（例：`$.digest.items[0].summary too_long`） |
+| `articles` / `budgetMinutes` | 送った記事の件数と、要約の時間予算 |
+
+記録には、AIの応答本文、提供元のエラーメッセージ、記事の内容を含めません。
+
 ## 5. 既存データを移す
 
 1. 現在のFolioで、左下のダウンロードボタン（ライブラリをエクスポート）からJSONバックアップを保存します。

@@ -70,3 +70,9 @@ test('OpenAI互換の形（choices[0].message.content）で返すモデルの出
   for (const result of [chat('not json sk-secret'), chat(null), { choices: [] }, { choices: 'x' }])
     await fails(provider(async () => result), 'invalid_output', 502);
 });
+test('出力を読めなかった理由をreasonで区別する（応答本文は含めない）', async () => {
+  const reason = (run: () => Promise<unknown>, expected: string) => assert.rejects(provider(run).generate(base()), (e: unknown) => e instanceof AIError && e.code === 'invalid_output' && e.reason === expected);
+  await reason(async () => { throw new Error("JSON Mode couldn't be met sk-secret"); }, 'json_mode');
+  await reason(async () => ({ response: 'not json sk-secret' }), 'output_not_json');
+  await reason(async () => ({ response: null }), 'no_content');
+});

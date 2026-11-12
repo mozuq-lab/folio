@@ -39,14 +39,14 @@ export function createOpenAIProvider(options: { apiKey: string; fetcher?: typeof
         }),
       });
       if (!response.ok) throw await classifyFailure(response, request.model);
-      if (!/^application\/json(?:;|$)/i.test(response.headers.get('content-type') ?? '')) { await response.body?.cancel(); throw invalidOutput(); }
+      if (!/^application\/json(?:;|$)/i.test(response.headers.get('content-type') ?? '')) { await response.body?.cancel(); throw invalidOutput('not_json_response'); }
       const envelope = await readEnvelope(response) as { status?: unknown; output?: unknown };
       if (!envelope || envelope.status !== 'completed' || !Array.isArray(envelope.output)) return { kind: 'incomplete' };
       const messages = envelope.output.filter((item: unknown) => !!item && typeof item === 'object' && (item as { type?: unknown }).type === 'message') as { content?: unknown }[];
       const parts = messages.flatMap(message => Array.isArray(message.content) ? message.content : []) as { type?: unknown; text?: unknown }[];
       if (parts.some(part => part.type === 'refusal')) return { kind: 'refused' };
       const output = parts.filter(part => part.type === 'output_text' && typeof part.text === 'string').map(part => part.text).join('');
-      try { return { kind: 'ok', json: JSON.parse(output) }; } catch { throw invalidOutput(); }
+      try { return { kind: 'ok', json: JSON.parse(output) }; } catch { throw invalidOutput('output_not_json'); }
     },
   };
 }

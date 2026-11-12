@@ -9,7 +9,7 @@ export type WorkersAIBinding = { run(model: string, input: unknown, options?: un
 function classify(error: unknown, model: string): AIError {
   if (error instanceof AIError) return error;
   const message = error instanceof Error ? error.message : '';
-  if (message.includes("JSON Mode couldn't be met")) return invalidOutput();
+  if (message.includes("JSON Mode couldn't be met")) return invalidOutput('json_mode');
   if (/no such model|model not found|unknown model|invalid model/i.test(message)) return providerFailure('invalid_model', 'workers-ai', model);
   return providerFailure('provider_error', 'workers-ai', model);
 }
@@ -27,9 +27,9 @@ function contentOf(result: unknown): { content: unknown; truncated: boolean } {
 // The content may be an object, a JSON string, or a string wrapped in a code fence.
 function parseResponse(response: unknown): unknown {
   if (response && typeof response === 'object') return response;
-  if (typeof response !== 'string') throw invalidOutput();
+  if (typeof response !== 'string') throw invalidOutput('no_content');
   const text = response.trim().replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```$/, '').trim();
-  try { return JSON.parse(text); } catch { throw invalidOutput(); }
+  try { return JSON.parse(text); } catch { throw invalidOutput('output_not_json'); }
 }
 
 // The binding takes no AbortSignal, so race the call against the signal to let runAI's timeout take effect.

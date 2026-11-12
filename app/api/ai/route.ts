@@ -45,6 +45,6 @@ export async function POST(request:Request):Promise<Response>{
     const selection=resolveSelection(value,providerStatuses(env,{dev:import.meta.env.DEV}));
     if(!selection.status.available)throw new AIError(503,'not_configured',`${selection.status.label}は使えません（${selection.status.reason}）。設定画面で別の提供元を選んでください。`);
     rateLimit(user.id);
-    return Response.json(await runAI(value,{provider:createProvider(selection.provider,env),model:selection.model,effort:selection.effort}),{headers});
+    return Response.json(await runAI(value,{provider:createProvider(selection.provider,env),model:selection.model,effort:selection.effort,log:entry=>console.warn(entry)}),{headers});
   }catch(error){return failure(error);}
 }

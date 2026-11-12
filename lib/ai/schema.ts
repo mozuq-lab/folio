@@ -19,13 +19,41 @@ export function resultSchema(action:AIRequest['action']):Schema {
   }
 }
 // Apply the exact schema sent to the provider again at the trust boundary.
-export function conforms(value:unknown,schema:Schema):boolean {
-  if(schema.type==='string') return typeof value==='string'&&(!schema.enum||schema.enum.includes(value))&&value.length>=(schema.minLength??0)&&value.length<=(schema.maxLength??Infinity);
-  if(schema.type==='integer') return typeof value==='number'&&Number.isInteger(value)&&value>=(schema.minimum??-Infinity)&&value<=(schema.maximum??Infinity);
-  if(schema.type==='array') return Array.isArray(value)&&value.length>=(schema.minItems??0)&&value.length<=(schema.maxItems??Infinity)&&value.every(item=>conforms(item,schema.items!));
-  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+/**
+ * schemaに合わない最初の場所と種類（例：`$.digest.items[0].summary too_long`）。合っていればnull。
+ * ログに出すので、場所はschemaの項目名と配列の位置だけで作り、出力の値や未知の項目名は含めない。
+ */
+export function schemaMismatch(value:unknown,schema:Schema,path='$'):string|null {
+  const at=(problem:string)=>`${path} ${problem}`;
+  if(schema.type==='string'){
+    if(typeof value!=='string')return at('not_string');
+    if(schema.enum&&!schema.enum.includes(value))return at('not_in_enum');
+    if(value.length<(schema.minLength??0))return at('too_short');
+    return value.length>(schema.maxLength??Infinity)?at('too_long'):null;
+  }
+  if(schema.type==='integer'){
+    if(typeof value!=='number'||!Number.isInteger(value))return at('not_integer');
+    if(value<(schema.minimum??-Infinity))return at('below_minimum');
+    return value>(schema.maximum??Infinity)?at('above_maximum'):null;
+  }
+  if(schema.type==='array'){
+    if(!Array.isArray(value))return at('not_array');
+    if(value.length<(schema.minItems??0))return at('too_few_items');
+    if(value.length>(schema.maxItems??Infinity))return at('too_many_items');
+    for(let i=0;i<value.length;i++){const found=schemaMismatch(value[i],schema.items!,`${path}[${i}]`);if(found)return found;}
+    return null;
+  }
+  if(!value||typeof value!=='object'||Array.isArray(value))return at('not_object');
   const data=value as Record<string,unknown>;
-  return Object.keys(data).every(key=>Object.hasOwn(schema.properties!,key))&&schema.required!.every(key=>Object.hasOwn(data,key)&&conforms(data[key],schema.properties![key]));
+  if(Object.keys(data).some(key=>!Object.hasOwn(schema.properties!,key)))return at('unexpected_key');
+  for(const key of schema.required!){
+    if(!Object.hasOwn(data,key))return `${path}.${key} missing`;
+    const found=schemaMismatch(data[key],schema.properties![key],`${path}.${key}`);if(found)return found;
+  }
+  return null;
+}
+export function conforms(value:unknown,schema:Schema):boolean {
+  return schemaMismatch(value,schema)===null;
 }
 // Claude structured outputs reject these keywords; conforms() still enforces them app-side.
 const CLAUDE_UNSUPPORTED = ['minLength', 'maxLength', 'minimum', 'maximum', 'minItems', 'maxItems'] as const;

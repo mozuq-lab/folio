@@ -63,3 +63,9 @@ test('abortは分類せず再throwする', async () => {
   const abort = new DOMException('aborted', 'AbortError');
   await assert.rejects(provider(async () => { throw abort; }).generate(base()), (e: unknown) => e === abort);
 });
+test('出力を読めなかった理由をreasonで区別する（応答本文は含めない）', async () => {
+  const reason = (fetcher: () => Promise<Response>, expected: string) => assert.rejects(provider(fetcher).generate(base()), (e: unknown) => e instanceof AIError && e.code === 'invalid_output' && e.reason === expected);
+  await reason(async () => completion({ content: 'not json sk-secret' }), 'output_not_json');
+  await reason(async () => completion({ content: null }), 'no_content');
+  await reason(async () => Response.json({ choices: [] }), 'no_choice');
+});

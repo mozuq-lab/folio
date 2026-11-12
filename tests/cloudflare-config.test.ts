@@ -12,6 +12,8 @@ test('Cloudflareの設定を正規化し、DBと全URLの認証を必要とす�
  assert.deepEqual(worker.ai,{binding:'AI'});assert.equal(worker.d1_databases[0].binding,'DB');assert.equal(worker.preview_urls,false);
  assert.equal(worker.vars.FOLIO_ALLOWED_EMAILS,'owner@example.com');
  assert.equal(Object.hasOwn(worker.vars,'OPENAI_API_KEY'),false);
+ // console に出した記録（AIの失敗の区分など）だけをWorkers Logsに残し、リクエストごとの記録は残さない。
+ assert.deepEqual(worker.observability,{enabled:true,logs:{invocation_logs:false}});
 });
 test('本番では未設定account/database/Access/メールを拒否し、bootstrapでもaccount/databaseが必要',()=>{
  for(const change of [{accountId:''},{databaseId:'00000000-0000-4000-8000-000000000000'},{accessAudience:''},{accessTeamDomain:''},{allowedEmails:[]}])assert.throws(()=>parseCloudflareSettings({...settings,...change},{deployment:true}));

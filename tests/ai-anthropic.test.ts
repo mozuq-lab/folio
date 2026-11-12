@@ -72,3 +72,6 @@ test('エラー応答を分類し、応答本文を含めない', async () => {
 test('メッセージに提供元とモデルを含む', async () => {
   await assert.rejects(provider(errorResponse(404, 'not_found_error', 'sk-secret')).generate(base()), (e: unknown) => e instanceof AIError && e.message === '選んだモデルを確認してください（提供元：Claude、モデル：claude-test）');
 });
+test('JSONとして読めない出力はreasonをoutput_not_jsonにする', async () => {
+  await assert.rejects(provider(async () => message([text('not json sk-secret')])).generate(base()), (e: unknown) => e instanceof AIError && e.code === 'invalid_output' && e.reason === 'output_not_json');
+});

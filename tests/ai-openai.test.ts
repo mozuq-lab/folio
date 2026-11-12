@@ -61,3 +61,9 @@ test('incomplete・refusalを区別し、不正な応答はAIErrorにする', as
 test('2MiBを超える応答はAIErrorにする', async () => {
   await assert.rejects(provider(async () => new Response('x'.repeat(2 * 1024 * 1024 + 1), { headers: { 'content-type': 'application/json' } })).generate(base()), (e: unknown) => e instanceof AIError && e.status === 502);
 });
+test('出力を読めなかった理由をreasonで区別する（応答本文は含めない）', async () => {
+  const reason = (fetcher: () => Promise<Response>, expected: string) => assert.rejects(provider(fetcher).generate(base()), (e: unknown) => e instanceof AIError && e.code === 'invalid_output' && e.reason === expected);
+  await reason(async () => completed('not json sk-secret'), 'output_not_json');
+  await reason(async () => new Response('sk-secret', { headers: { 'content-type': 'text/plain' } }), 'not_json_response');
+  await reason(async () => new Response('{broken sk-secret', { headers: { 'content-type': 'application/json' } }), 'envelope_not_json');
+});
