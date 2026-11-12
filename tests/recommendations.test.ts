@@ -45,10 +45,17 @@ test('同じ関連度なら新しい記事を優先する', () => {
   assert.equal(rankArticles(articles, preferences(), {}, NOW)[0].id, 'z-new');
 });
 
-test('ミュートしたtopicと興味なしの記事を除外する', () => {
-  const articles = [article('muted', { tags: ['デザイン'] }), article('disliked'), article('visible')];
-  const ranked = rankArticles(articles, preferences({ mutedTopics: ['デザイン'] }), { disliked: 'dislike' }, NOW);
+test('ミュートしたtopicの記事を除外する', () => {
+  const articles = [article('muted', { tags: ['デザイン'] }), article('visible')];
+  const ranked = rankArticles(articles, preferences({ mutedTopics: ['デザイン'] }), {}, NOW);
   assert.deepEqual(ranked.map(({ id }) => id), ['visible']);
+});
+
+test('興味なしの記事は除外せず、順位を下げて理由を示す', () => {
+  const ranked = rankArticles([article('a'), article('z')], preferences(), { a: 'dislike' }, NOW);
+  assert.deepEqual(ranked.map(({ id }) => id), ['z', 'a']);
+  assert.ok(ranked[1].score < ranked[0].score);
+  assert.equal(ranked[1].reason, '「興味なし」にした記事');
 });
 
 test('興味ありの記事を優先する', () => {

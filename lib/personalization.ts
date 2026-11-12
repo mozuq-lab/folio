@@ -18,7 +18,7 @@ export function rankPersonalized(articles:Article[],preferences:Preferences,feed
  return ranked.map(a=>{
   const ai=intelligence.analysis[a.id];const impact=scoreImportance(originals.get(a.id)??a,articles);const natural=includeHidden?0:scoreNaturalPreference(a,intelligence.profile);
   const learned=a.tags.reduce((sum,t)=>sum+(prefs.topicWeights[t]||0)*2,0)+(prefs.sourceWeights[a.sourceId]||0)*2;
-  const interest=ai?bounded(ai.interest+Math.max(-16,Math.min(16,learned))+(feedback[a.id]==='like'?8:0)):bounded(a.score+natural);
+  const interest=ai?bounded(ai.interest+Math.max(-16,Math.min(16,learned))+(feedback[a.id]==='like'?8:feedback[a.id]==='dislike'?-8:0)):bounded(a.score+natural);
   return {...a,score:interest,interestScore:interest,reason:ai?.reason||(natural>0?'自然文の好みと記事の内容が一致':a.reason),importance:ai?bounded(ai.importance):impact.score,importanceReason:ai?.importanceReason||impact.reason,isExploration:false,aiAnalyzed:!!ai,aiSummary:ai?.summary};
  }).sort((a,b)=>b.interestScore-a.interestScore||(Date.parse(b.publishedAt)||0)-(Date.parse(a.publishedAt)||0)||a.id.localeCompare(b.id));
 }
