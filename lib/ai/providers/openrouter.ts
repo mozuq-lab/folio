@@ -39,14 +39,14 @@ export function createOpenRouterProvider(options: { apiKey: string; fetcher?: ty
         }),
       });
       if (!response.ok) throw await classifyFailure(response, request.model);
-      if (!/^application\/json(?:;|$)/i.test(response.headers.get('content-type') ?? '')) { await response.body?.cancel(); throw invalidOutput(); }
+      if (!/^application\/json(?:;|$)/i.test(response.headers.get('content-type') ?? '')) { await response.body?.cancel(); throw invalidOutput('not_json_response'); }
       const envelope = await readEnvelope(response) as { choices?: unknown };
       const choice = Array.isArray(envelope?.choices) ? envelope.choices[0] as { finish_reason?: unknown; message?: { content?: unknown; refusal?: unknown } } | undefined : undefined;
-      if (!choice || typeof choice !== 'object') throw invalidOutput();
+      if (!choice || typeof choice !== 'object') throw invalidOutput('no_choice');
       if (typeof choice.message?.refusal === 'string') return { kind: 'refused' };
       if (choice.finish_reason === 'length') return { kind: 'incomplete' };
-      if (typeof choice.message?.content !== 'string') throw invalidOutput();
-      try { return { kind: 'ok', json: JSON.parse(choice.message.content) }; } catch { throw invalidOutput(); }
+      if (typeof choice.message?.content !== 'string') throw invalidOutput('no_content');
+      try { return { kind: 'ok', json: JSON.parse(choice.message.content) }; } catch { throw invalidOutput('output_not_json'); }
     },
   };
 }

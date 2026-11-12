@@ -42,7 +42,7 @@ export function createAnthropicProvider(options: { apiKey: string; fetch?: typeo
       if (message.stop_reason === 'refusal') return { kind: 'refused' };
       if (message.stop_reason === 'max_tokens') return { kind: 'incomplete' };
       const output = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('');
-      try { return { kind: 'ok', json: JSON.parse(output) }; } catch { throw invalidOutput(); }
+      try { return { kind: 'ok', json: JSON.parse(output) }; } catch { throw invalidOutput('output_not_json'); }
     },
   };
 }

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { AIRequest, AIResult } from './intelligence-types.ts';
-import { resultSchema, conforms } from './ai/schema.ts';
+import { resultSchema, schemaMismatch } from './ai/schema.ts';
 import type { Schema } from './ai/schema.ts';
 import { INVALID_OUTPUT_MESSAGE } from './ai/messages.ts';
 import { TOPICS, sanitizeTopics } from './topics.ts';
@@ -10,8 +10,14 @@ import type { AIProvider, Effort } from './ai/types.ts';
 export class AIError extends Error {
   status: number;
   code: string;
-  constructor(status: number, code: string, message = 'AIの応答を確認できませんでした。もう一度お試しください。') {
+  /** 失敗の区分（ログ用。利用者には返さない）。提供元の応答本文やエラーメッセージは入れない。 */
+  reason?: string;
+  /** 区分の補足（ログ用）。schemaに合わない場所など、アプリが決めた語だけで作る。 */
+  detail?: string;
+  constructor(status: number, code: string, message = 'AIの応答を確認できませんでした。もう一度お試しください。', reason?: string, detail?: string) {
     super(message); this.name = 'AIError'; this.status = status; this.code = code;
+    if (reason) this.reason = reason;
+    if (detail) this.detail = detail;
   }
 }
 const short = z.string().max(1000);
@@ -43,7 +49,7 @@ export function validateRequest(value: unknown): AIRequest {
   return request;
 }
 
-function invalidOutput():never {throw new AIError(502,'invalid_output',INVALID_OUTPUT_MESSAGE);}
+function invalidOutput(reason:string,detail?:string):never {throw new AIError(502,'invalid_output',INVALID_OUTPUT_MESSAGE,reason,detail);}
 // tags を書かないモデルや、候補にない・多すぎるタグを返すモデルもある。1件のタグのせいで50件のまとまりが失敗しないよう、
 // analyze では形を確かめる前に tags を候補の中のものだけ（3個まで）にそろえる。
 function withSanitizedTags(value:unknown):unknown {
@@ -54,7 +60,8 @@ function withSanitizedTags(value:unknown):unknown {
 }
 function validateResult(raw:unknown,schema:Schema,request:AIRequest):AIResult {
   const value=withSanitizedTags(raw);
-  if(!conforms(value,schema))invalidOutput();
+  const mismatch=schemaMismatch(value,schema);
+  if(mismatch)invalidOutput('schema_mismatch',mismatch);
   const result=value as AIResult;
   const articles=new Map(request.articles.map(article=>[article.id,article]));
   const validIds=(values:string[])=>values.every(id=>articles.has(id))&&new Set(values).size===values.length;
@@ -64,18 +71,26 @@ function validateResult(raw:unknown,schema:Schema,request:AIRequest):AIResult {
     result.analysis=result.analysis.filter(item=>articles.has(item.articleId)&&!seen.has(item.articleId)&&seen.add(item.articleId)).map(({tags,...item})=>({...item,summary:item.summary.slice(0,200),reason:item.reason.slice(0,80),importanceReason:item.importanceReason.slice(0,80),
       // タグが付かなかった記事は tags を持たせず、規則で付けたタグを使い続ける。
       ...(tags?.length?{tags}:{})}));
-    if(!result.analysis.length)invalidOutput();
+    if(!result.analysis.length)invalidOutput('analyze_empty');
   } else if(result.kind==='digest'){
     const digest=result.digest;
-    if(!validIds(digest.items.map(item=>item.articleId))||digest.totalMinutes!==digest.items.reduce((sum,item)=>sum+item.minutes,0)||digest.totalMinutes>(request.budgetMinutes??5)||!Number.isFinite(Date.parse(digest.generatedAt)))invalidOutput();
-    if(!digest.items.length)invalidOutput();
+    const ids=digest.items.map(item=>item.articleId);const minutes=digest.items.reduce((sum,item)=>sum+item.minutes,0);
+    if(!digest.items.length)invalidOutput('digest_empty');
+    if(ids.some(id=>!articles.has(id)))invalidOutput('digest_unknown_article');
+    if(new Set(ids).size!==ids.length)invalidOutput('digest_duplicate_article');
+    if(minutes>(request.budgetMinutes??5))invalidOutput('digest_over_budget');
+    if(digest.totalMinutes!==minutes)invalidOutput('digest_total_mismatch');
+    if(!Number.isFinite(Date.parse(digest.generatedAt)))invalidOutput('digest_invalid_generated_at');
     digest.generatedAt=new Date().toISOString();
   } else if(result.kind==='compare'){
-    if(result.report.developments.some(item=>!validIds(item.articleIds))||result.report.perspectives.some(item=>!validIds(item.articleIds)||item.articleIds.some(id=>articles.get(id)!.sourceName!==item.sourceName)))invalidOutput();
+    if([...result.report.developments,...result.report.perspectives].some(item=>!validIds(item.articleIds)))invalidOutput('compare_invalid_article');
+    if(result.report.perspectives.some(item=>item.articleIds.some(id=>articles.get(id)!.sourceName!==item.sourceName)))invalidOutput('compare_source_mismatch');
   } else if(result.kind==='ask'){
     for(const citation of result.result.citations){
       const article=articles.get(citation.articleId);
-      if(!article||!citation.quote.trim()||!((article.content??'').includes(citation.quote)||article.description.includes(citation.quote)))invalidOutput();
+      if(!article)invalidOutput('ask_unknown_article');
+      if(!citation.quote.trim())invalidOutput('ask_empty_quote');
+      if(!((article.content??'').includes(citation.quote)||article.description.includes(citation.quote)))invalidOutput('ask_quote_not_found');
     }
     if(!result.result.citations.length) result.result.answer='保存記事から回答の根拠を見つけられませんでした。質問を具体的にするか、関連する記事を保存してください。';
   }
@@ -89,7 +104,13 @@ action=digest: budgetMinutes以内に収まる読書要約。各minutesは1以�
 action=compare: readIdsの既読記事と残りの未読記事を比較して新しく分かったことをdevelopmentsに記述。既読が無いときや新情報が無いときは明示。perspectivesは媒体ごとに記事根拠を結び、推測と相違点を区別。articleIdsは実際の根拠を示す。
 action=ask: 質問には記事と関連ノートだけから回答しcitationsを付ける。メモだけの主張を記事引用で裏づけたかのように書かない。資料で答えられない場合は根拠不足と明記しcitations=[]。`;
 
-export async function runAI(value:AIRequest,runtime:{provider:AIProvider;model:string;effort:Effort;now?:()=>Date}):Promise<AIResult>{
+export type AIFailureLog = { event:'ai_failure'; action:AIRequest['action']; provider:string; model:string; effort:Effort; code:string; reason?:string; detail?:string; articles:number; budgetMinutes?:number };
+// 提供元へ送った後の失敗を1件の記録にする。値はアプリが決めた語と件数だけで、提供元の応答やエラーメッセージ、記事の内容は含めない。
+function failureLog(error:AIError,request:AIRequest,runtime:{provider:AIProvider;model:string;effort:Effort}):AIFailureLog {
+  return {event:'ai_failure',action:request.action,provider:runtime.provider.id,model:runtime.model,effort:runtime.effort,code:error.code,...(error.reason?{reason:error.reason}:{}),...(error.detail?{detail:error.detail}:{}),articles:request.articles.length,...(request.action==='digest'?{budgetMinutes:request.budgetMinutes??5}:{})};
+}
+
+export async function runAI(value:AIRequest,runtime:{provider:AIProvider;model:string;effort:Effort;now?:()=>Date;log?:(entry:AIFailureLog)=>void}):Promise<AIResult>{
   const request=validateRequest(value);
   const schema=resultSchema(request.action);
   const data={action:request.action,now:(runtime.now?.()??new Date()).toISOString(),instruction:request.instruction??'',question:request.action==='ask'?request.question:undefined,budgetMinutes:request.budgetMinutes??5,readIds:request.action==='compare'?request.readIds??[]:undefined,notes:request.action==='ask'?request.notes??[]:undefined,articles:(request.action==='preferences'?[]:request.articles).map(article=>({id:article.id,title:article.title,description:article.description,content:article.content||undefined,sourceName:article.sourceName,publishedAt:article.publishedAt,readingMinutes:article.readingMinutes,isSample:article.isSample??false,material:article.content?'取得済み本文（取得範囲のみ）':'RSS概要のみ・本文未取得'}))};
@@ -101,8 +122,10 @@ export async function runAI(value:AIRequest,runtime:{provider:AIProvider;model:s
     if(result.kind==='incomplete')throw new AIError(502,'incomplete_output','AIの出力が途中で終わりました。推論の深さを下げるか対象記事を減らしてください。');
     return validateResult(result.json,schema,request);
   }catch(error){
-    if(error instanceof AIError)throw error;
-    if(controller.signal.aborted||(error instanceof Error&&error.name==='AbortError'))throw new AIError(504,'timeout','AIの処理がタイムアウトしました。対象記事を減らしてお試しください。');
-    throw new AIError(502,'network_error','AIサービスとの通信に失敗しました。時間をおいてお試しください。');
+    const failure=error instanceof AIError?error
+      :controller.signal.aborted||(error instanceof Error&&error.name==='AbortError')?new AIError(504,'timeout','AIの処理がタイムアウトしました。対象記事を減らしてお試しください。')
+      :new AIError(502,'network_error','AIサービスとの通信に失敗しました。時間をおいてお試しください。');
+    runtime.log?.(failureLog(failure,request,runtime));
+    throw failure;
   }finally{clearTimeout(timeout);}
 }

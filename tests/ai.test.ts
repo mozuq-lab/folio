@@ -115,3 +115,57 @@ test('analyzeでtagsが多すぎる・長すぎる記事があっても、まと
   const result=await runAI(request('analyze'),runtime(returning({kind:'analyze',analysis:[{articleId:'a',interest:1,importance:1,summary:'',reason:'r',importanceReason:'i',tags:[...Array.from({length:40},()=>'x'.repeat(100)),'開発']}]})));
   assert.ok(result.kind==='analyze');assert.deepEqual(result.analysis[0].tags,['開発']);
 });
+type LogEntry = Record<string, unknown>;
+const logging = (provider:AIProvider) => { const entries:LogEntry[]=[]; return { entries, runtime:{...runtime(provider),log:(entry:LogEntry)=>{entries.push(entry);}} }; };
+const digestOutput = {title:'今日のまとめ',overview:'交通研究',items:[{articleId:'a',summary:'概要',takeaway:'地域差に注意',minutes:2}],totalMinutes:2,generatedAt:'2026-11-06T00:00:00Z',mode:'ai'};
+test('digestの出力を拒否した理由をログに残し、利用者向けの文言は変えない',async()=>{
+  const item=digestOutput.items[0];
+  const cases:[Record<string,unknown>,string,string|undefined][]=[
+    [{totalMinutes:3},'digest_total_mismatch',undefined],
+    [{items:[{...item,minutes:6}],totalMinutes:6},'digest_over_budget',undefined],
+    [{items:[{...item,articleId:'zz'}]},'digest_unknown_article',undefined],
+    [{items:[item,item],totalMinutes:4},'digest_duplicate_article',undefined],
+    [{items:[],totalMinutes:0},'digest_empty',undefined],
+    [{generatedAt:'いま'},'digest_invalid_generated_at',undefined],
+    [{items:[{...item,summary:'あ'.repeat(1501)}]},'schema_mismatch','$.digest.items[0].summary too_long'],
+    [{items:[{...item,takeaway:''}]},'schema_mismatch','$.digest.items[0].takeaway too_short'],
+    [{items:[{...item,minutes:1.5}],totalMinutes:1.5},'schema_mismatch','$.digest.items[0].minutes not_integer'],
+    [{mode:'extractive'},'schema_mismatch','$.digest.mode not_in_enum'],
+    [{title:undefined},'schema_mismatch','$.digest.title missing'],
+  ];
+  for(const [change,reason,detail] of cases){
+    const digest=Object.fromEntries(Object.entries({...digestOutput,...change}).filter(([,value])=>value!==undefined));
+    const {entries,runtime:withLog}=logging(returning({kind:'digest',digest}));
+    await assert.rejects(runAI(request('digest'),withLog),(e:unknown)=>e instanceof AIError&&e.code==='invalid_output'&&e.message==='AIの出力に不正な形式、記事参照、引用または時間配分がありました。再実行してください。');
+    assert.deepEqual(entries,[{event:'ai_failure',action:'digest',provider:'openai',model:'test-model',effort:'medium',code:'invalid_output',reason,...(detail?{detail}:{}),articles:1,budgetMinutes:5}],reason);
+  }
+});
+test('失敗のログに提供元の文章・未知の項目名・例外のメッセージを含めない',async()=>{
+  const secret='sk-secret-出力';
+  const outputs=[{kind:'digest',digest:{...digestOutput,items:[{...digestOutput.items[0],summary:secret.repeat(200)}]}},{kind:'digest',digest:{...digestOutput,[secret]:1}},{kind:'ask',result:{answer:secret,citations:[{articleId:'a',quote:secret}]}}];
+  for(const json of outputs){
+    const {entries,runtime:withLog}=logging(returning(json));
+    await assert.rejects(runAI(json.kind==='ask'?request('ask'):request('digest'),withLog),AIError);
+    assert.equal(entries.length,1);assert.ok(!JSON.stringify(entries).includes('sk-secret'));
+  }
+  const {entries,runtime:withLog}=logging(fake(()=>{throw new Error(`boom ${secret}`);}));
+  await assert.rejects(runAI(request('ask'),withLog),AIError);
+  assert.deepEqual(entries,[{event:'ai_failure',action:'ask',provider:'openai',model:'test-model',effort:'medium',code:'network_error',articles:1}]);
+});
+test('未知の項目は場所だけを記録し、ask・compare・analyzeの拒否理由も区別する',async()=>{
+  const run=async(action:AIRequest['action'],json:unknown)=>{const {entries,runtime:withLog}=logging(returning(json));await assert.rejects(runAI(request(action),withLog),AIError);return [entries[0].reason,entries[0].detail];};
+  assert.deepEqual(await run('digest',{kind:'digest',digest:{...digestOutput,extra:1}}),['schema_mismatch','$.digest unexpected_key']);
+  assert.deepEqual(await run('ask',{kind:'ask',result:{answer:'回答',citations:[{articleId:'zz',quote:'交通'}]}}),['ask_unknown_article',undefined]);
+  assert.deepEqual(await run('ask',{kind:'ask',result:{answer:'回答',citations:[{articleId:'a',quote:'架空の引用'}]}}),['ask_quote_not_found',undefined]);
+  assert.deepEqual(await run('ask',{kind:'ask',result:{answer:'回答',citations:[{articleId:'a',quote:' '}]}}),['ask_empty_quote',undefined]);
+  assert.deepEqual(await run('analyze',{kind:'analyze',analysis:[]}),['analyze_empty',undefined]);
+  const report={overview:'o',developments:[],perspectives:[{sourceName:'別媒体',point:'p',articleIds:['a']}],uncertainties:[]};
+  assert.deepEqual(await run('compare',{kind:'compare',report}),['compare_source_mismatch',undefined]);
+  assert.deepEqual(await run('compare',{kind:'compare',report:{...report,perspectives:[],developments:[{text:'t',articleIds:['zz']}]}}),['compare_invalid_article',undefined]);
+});
+test('成功したときと、提供元へ送る前の入力の誤りではログを残さない',async()=>{
+  const {entries,runtime:withLog}=logging(returning({kind:'digest',digest:digestOutput}));
+  await runAI(request('digest'),withLog);
+  await assert.rejects(runAI({...request('digest'),budgetMinutes:31},withLog),AIError);
+  assert.deepEqual(entries,[]);
+});
