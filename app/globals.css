@@ -157,3 +157,5 @@
 /* スマホ表示では上部バー（メニューボタン）を画面の上に張り付け、下へスクロールしている間だけ隠す。記事一覧の見出しは上部バーのすぐ下に張り付ける。
    キーボードで上部バーを操作している間（検索の入力中を含む）は隠さず、見出しもその下に置く。タップしたボタンに残るフォーカスでは隠す */
 @media(max-width:760px){.topbar{position:sticky;top:0;z-index:20;transition:transform .2s ease;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}.list-toolbar{top:56px;transition:top .2s ease}.workspace[data-topbar-hidden] .topbar:not(:has(:focus-visible)){transform:translateY(-100%)}.workspace[data-topbar-hidden]:not(:has(.topbar :focus-visible)) .list-toolbar{top:0}}
+/* サイドバーと右の列がある幅では、メインの領域を左に寄せ、サイドバーとの間を詰める（広い画面で余る幅は右に回す）。上部バーのパンくずも本文と左端をそろえる */
+@media(min-width:1081px){.main-layout{margin-left:0;padding-left:16px}.topbar{padding-left:16px}}
