@@ -30,7 +30,8 @@ export function rankArticles(
   const muted = new Set(preferences.mutedTopics);
   const diversity = clamp(finite(preferences.diversity), 0, 100) / 100;
   const candidates = articles
-    .filter((article) => feedback[article.id] !== 'dislike' && !article.tags.some((tag) => muted.has(tag)))
+    // 興味なしの記事は一覧から消さず、順位を下げる（押し間違えても一覧から戻せるように）。
+    .filter((article) => !article.tags.some((tag) => muted.has(tag)))
     .map((article, order) => {
       const tags = [...new Set(article.tags)];
       const matches = tags.filter((tag) => interests.has(tag));
@@ -40,24 +41,28 @@ export function rankArticles(
       const ageHours = Math.max(0, (currentTime - published) / HOUR);
       const freshness = published === 0 ? 0 : 20 * Math.exp(-ageHours / 120);
       const liked = feedback[article.id] === 'like';
+      const disliked = feedback[article.id] === 'dislike';
       const value = 34
         + Math.min(matches.length, 2) * 22
         + clamp(topicWeight * 4, -24, 24)
         + clamp(sourceWeight * 4, -12, 12)
         + freshness
-        + (liked ? 14 : 0);
+        + (liked ? 14 : 0)
+        - (disliked ? 14 : 0);
       const learnedTopic = tags.find((tag) => finite(preferences.topicWeights[tag]) > 0);
       const reason = liked
         ? '「興味あり」にした記事'
-        : matches.length
-          ? `${matches.slice(0, 2).join('・')}への興味にマッチ`
-          : learnedTopic
-            ? `最近の反応から、${learnedTopic}をおすすめ`
-            : sourceWeight > 0
-              ? '関心を示したメディアからのおすすめ'
-              : ageHours < 24
-                ? '新しく届いた、発見につながる記事'
-                : 'いつもと少し違う視点を届けます';
+        : disliked
+          ? '「興味なし」にした記事'
+          : matches.length
+            ? `${matches.slice(0, 2).join('・')}への興味にマッチ`
+            : learnedTopic
+              ? `最近の反応から、${learnedTopic}をおすすめ`
+              : sourceWeight > 0
+                ? '関心を示したメディアからのおすすめ'
+                : ageHours < 24
+                  ? '新しく届いた、発見につながる記事'
+                  : 'いつもと少し違う視点を届けます';
       return { article, tags, value: clamp(value, 0, 99), reason, published, order };
     });
   type Candidate = (typeof candidates)[number];
