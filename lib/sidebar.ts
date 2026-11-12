@@ -1,4 +1,4 @@
-/** 閉じているフォルダ（カテゴリ名）。端末ごとにlocalStorageへ保存する（同期しない）。 */
+/** 閉じている分類（分類の名前）。端末ごとにlocalStorageへ保存する（同期しない）。 */
 export const COLLAPSED_FOLDERS_KEY = 'folio.collapsedFolders';
 
 export function parseCollapsedFolders(raw: string | null): string[] {

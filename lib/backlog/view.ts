@@ -10,7 +10,7 @@ export type ImportRequest = { articles: Article[]; read: string[] };
 
 /**
  * 同期データの記事（保持対象）とバックログの記事を合わせる。URLとIDで重複を除き、保持対象を優先する。
- * バックログの記事は購読中のフィードのものだけを出し、媒体名は購読時のフィード名にそろえる。
+ * バックログの記事は購読中のフィードのものだけを出し、記事のフィード名は購読時の名前にそろえる。
  */
 export function mergeViewArticles(retained: Article[], backlog: Article[], feeds: Feed[]): Article[] {
   const names = new Map(feeds.map(feed => [feed.id, feed.name]));
