@@ -35,12 +35,12 @@ function SourceButton({ article, onOpen }: { article: Article; onOpen: FeaturePa
 }
 
 function SaveButton({ article, saved, onSave }: { article: Article; saved: boolean; onSave: FeaturePanelProps['onSave'] }) {
-  return <button className={`fi-icon-button ${saved ? 'is-active' : ''}`} type="button" aria-label={saved ? `${article.title}の保存を解除` : `${article.title}をあとで読むに保存`} title={saved ? '保存を解除' : 'あとで読むに保存'} aria-pressed={saved} onClick={() => onSave(article)}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /></button>;
+  return <button className={`fi-icon-button ${saved ? 'is-active' : ''}`} type="button" aria-label={saved ? `${article.title}の保存を解除` : `${article.title}を保存`} title={saved ? '保存を解除' : 'あとで読むに保存'} aria-pressed={saved} onClick={() => onSave(article)}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /></button>;
 }
 
 function DigestContent({ digest, articles, saved, onOpen, onSave }: { digest: DigestResult; articles: Article[]; saved: string[]; onOpen: FeaturePanelProps['onOpen']; onSave: FeaturePanelProps['onSave'] }) {
   return <section className="fi-card fi-digest-result">
-    <div className="fi-heading"><span className="fi-badge">{digest.mode === 'ai' ? 'AIによる要約' : '記事概要の抜粋'}</span><span className="fi-meta"><Clock3 size={14} />合計 {digest.totalMinutes} 分</span></div>
+    <div className="fi-heading"><span className="fi-badge">{digest.mode === 'ai' ? 'AIによる要約' : '概要の抜粋'}</span><span className="fi-meta"><Clock3 size={14} />合計 {digest.totalMinutes} 分</span></div>
     <h2>{digest.title}</h2><p className="fi-copy">{digest.overview}</p>
     <ol className="fi-digest-list">{digest.items.map((item, index) => {
       const article = articles.find(article => article.id === item.articleId);
@@ -63,17 +63,17 @@ export function DigestView(props: FeaturePanelProps) {
     setPending(true); setError('');
     try {
       const result = await requestAI({ action: 'digest', articles: unread, budgetMinutes: budget });
-      if (result.kind !== 'digest') throw new Error('読書プランの応答を確認できませんでした。');
+      if (result.kind !== 'digest') throw new Error('ダイジェストの応答を確認できませんでした。');
       setIntelligence(current => ({ ...current, digest: result.digest }));
     } catch (error) { setError(errorMessage(error)); } finally { setPending(false); }
   }
   return <div className="fi-panel">
-    <div className="fi-toolbar"><div className="fi-segment" role="group" aria-label="読書プランの時間">{[5, 10, 15].map(minutes => <button key={minutes} type="button" aria-pressed={budget === minutes} onClick={() => setIntelligence(current => ({ ...current, digestMinutes: minutes }))}>{minutes}分</button>)}</div>
-      {aiAvailable && <button className="fi-button fi-primary" type="button" disabled={aiBusy || pending || !unread.length} onClick={generate}>{pending ? <LoaderCircle className="spin" size={16} /> : <Sparkles size={16} />}{pending ? '要約を作成中…' : 'AIで要約する'}</button>}</div>
+    <div className="fi-toolbar"><div className="fi-segment" role="group" aria-label="ダイジェストの時間">{[5, 10, 15].map(minutes => <button key={minutes} type="button" aria-pressed={budget === minutes} onClick={() => setIntelligence(current => ({ ...current, digestMinutes: minutes }))}>{minutes}分</button>)}</div>
+      {aiAvailable && <button className="fi-button fi-primary" type="button" disabled={aiBusy || pending || !unread.length} onClick={generate}>{pending ? <LoaderCircle className="spin" size={16} /> : <Sparkles size={16} />}{pending ? 'ダイジェストを作成中…' : 'AIでダイジェストを作る'}</button>}</div>
     <AIStatus available={aiAvailable} label={props.aiLabel} /><ErrorNotice message={error} />
     {intelligence.digest && <DigestContent digest={intelligence.digest} articles={reader.articles} saved={reader.saved} onOpen={onOpen} onSave={onSave} />}
-    <div className="fi-section-title"><BookOpen size={18} /><h2>すぐに読めるプラン</h2><span>AIを使わず作成</span></div>
-    {plan.items.length ? <DigestContent digest={plan} articles={reader.articles} saved={reader.saved} onOpen={onOpen} onSave={onSave} /> : <Empty>{reader.articles.length ? 'この時間内に読める未読記事がありません。時間を増やすか、新しい記事を取り込んでください。' : 'フィードを追加すると、未読記事から読書プランを作れます。'}</Empty>}
+    <div className="fi-section-title"><BookOpen size={18} /><h2>すぐに読めるダイジェスト</h2><span>AIを使わず作成</span></div>
+    {plan.items.length ? <DigestContent digest={plan} articles={reader.articles} saved={reader.saved} onOpen={onOpen} onSave={onSave} /> : <Empty>{reader.articles.length ? 'この時間内に読める未読記事がありません。時間を増やすか、フィードを更新してください。' : 'フィードを追加すると、未読記事からダイジェストを作れます。'}</Empty>}
   </div>;
 }
 
@@ -82,7 +82,7 @@ function NoteCard({ note, article, onOpen, onUpdate, onDelete }: { note: Article
   const [editing, setEditing] = useState(false);
   return <article className="fi-card fi-note"><div className="fi-heading"><span className="fi-badge"><FileText size={14} />{note.quote ? 'ハイライトとノート' : 'ノート'}</span><button className="fi-icon-button fi-delete" type="button" aria-label="このノートを削除" onClick={onDelete}><Trash2 size={16} /></button></div>
     {note.quote && <blockquote>{note.quote}</blockquote>}
-    {editing ? <form onSubmit={event => { event.preventDefault(); onUpdate(draft); setEditing(false); }}><label className="fi-label" htmlFor={`note-${note.id}`}>メモを編集</label><textarea id={`note-${note.id}`} className="fi-textarea" value={draft} maxLength={10000} onChange={event => setDraft(event.target.value)} rows={4} /><div className="fi-actions"><button className="fi-button fi-primary" type="submit">保存する</button><button className="fi-button" type="button" onClick={() => setEditing(false)}>キャンセル</button></div></form> : <><p className="fi-copy fi-note-body">{note.body || 'メモはまだありません。'}</p><button type="button" className="fi-text-button" onClick={() => { setDraft(note.body); setEditing(true); }}>メモを編集</button></>}
+    {editing ? <form onSubmit={event => { event.preventDefault(); onUpdate(draft); setEditing(false); }}><label className="fi-label" htmlFor={`note-${note.id}`}>メモを編集</label><textarea id={`note-${note.id}`} className="fi-textarea" value={draft} maxLength={10000} onChange={event => setDraft(event.target.value)} rows={4} /><div className="fi-actions"><button className="fi-button fi-primary" type="submit">保存する</button><button className="fi-button" type="button" onClick={() => setEditing(false)}>キャンセル</button></div></form> : <><p className="fi-copy fi-note-body">{note.body || 'ノートはまだありません。'}</p><button type="button" className="fi-text-button" onClick={() => { setDraft(note.body); setEditing(true); }}>メモを編集</button></>}
     {article ? <SourceButton article={article} onOpen={onOpen} /> : <p className="fi-help">元の記事は現在のライブラリにありません。ノートは保持されています。</p>}
   </article>;
 }
@@ -113,7 +113,7 @@ export function NotebookView(props: FeaturePanelProps) {
       setQuestion('');
     } catch (error) { setError(errorMessage(error)); } finally { setPending(false); }
   }
-  return <div className="fi-panel"><label className="fi-search"><Search size={18} /><input aria-label="保存記事とノートを検索" value={query} onChange={event => setQuery(event.target.value)} placeholder="記事・メモ・ハイライトを検索" type="search" /><span>{found.length}記事</span></label>
+  return <div className="fi-panel"><label className="fi-search"><Search size={18} /><input aria-label="保存記事とノートを検索" value={query} onChange={event => setQuery(event.target.value)} placeholder="記事とノートを検索" type="search" /><span>{found.length}記事</span></label>
     <section className="fi-card fi-ask"><div className="fi-section-title"><MessageSquare size={18} /><h2>ライブラリに聞く</h2></div><p className="fi-copy">保存記事とノートを根拠に、出典付きで回答します。検索中は、その結果の最大30記事が対象です。</p><AIStatus available={aiAvailable} label={props.aiLabel} />
       {aiAvailable && <form onSubmit={event => { event.preventDefault(); void ask(); }}><label className="fi-label" htmlFor="fi-library-question">記事についての質問</label><textarea id="fi-library-question" className="fi-textarea" value={question} onChange={event => setQuestion(event.target.value)} placeholder="この記事に共通する論点は？" rows={2} maxLength={2000} /><div className="fi-actions"><span className="fi-help">回答には対象の記事・ノートを使います。</span><button className="fi-button fi-primary" type="submit" disabled={!question.trim() || !found.length || aiBusy || pending}>{pending ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}{pending ? '出典を確認中…' : '質問する'}</button></div></form>}
       <ErrorNotice message={error} /></section>
@@ -127,9 +127,9 @@ export function ExploreView(props: FeaturePanelProps) {
   const { reader, intelligence, setIntelligence, onOpen, onSave, onFeedback } = props;
   const articles = useMemo(() => selectExploration(reader.articles, reader.preferences, reader.feedback, 18, reader.read), [reader.articles, reader.preferences, reader.feedback, reader.read]);
   return <div className="fi-panel">
-    <section className="fi-card fi-exploration-setting"><div className="fi-heading"><label className="fi-label" htmlFor="fi-exploration-ratio">おすすめに混ぜる探索記事の割合</label><strong>{intelligence.exploration}%</strong></div><input id="fi-exploration-ratio" type="range" min={0} max={50} step={5} value={intelligence.exploration} onChange={event => setIntelligence(current => ({ ...current, exploration: Number(event.target.value) }))} /><div className="fi-range-labels"><span>いつもの関心を中心に</span><span>新しい分野を多めに</span></div><p className="fi-help">「多様性」は媒体の偏りを調整する設定です。探索は、関心に登録していない分野をおすすめに加えます。</p></section>
+    <section className="fi-card fi-exploration-setting"><div className="fi-heading"><label className="fi-label" htmlFor="fi-exploration-ratio">For Youに混ぜる新しい視点の割合</label><strong>{intelligence.exploration}%</strong></div><input id="fi-exploration-ratio" type="range" min={0} max={50} step={5} value={intelligence.exploration} onChange={event => setIntelligence(current => ({ ...current, exploration: Number(event.target.value) }))} /><div className="fi-range-labels"><span>いつもの興味を中心に</span><span>新しい分野を多めに</span></div><p className="fi-help">「多様性」はフィードやトピックの偏りを抑える設定です。新しい視点は、興味のあるトピックに入っていない分野の記事をFor Youに加えます。</p></section>
     <div className="fi-section-title"><Compass size={18} /><h2>新しい視点を見つける</h2><span>{articles.length}記事</span></div>
-    {!articles.length && <Empty>探索できる未読記事がありません。いつもと違う分野のフィードを追加すると、新しい記事に出会えます。</Empty>}
-    <div className="fi-library-grid">{articles.map(article => { const novelTags = article.tags.filter(tag => !reader.preferences.interests.includes(tag)); const saved = reader.saved.includes(article.id); return <article className="fi-card fi-explore-article" key={article.id}><span className="fi-meta">{article.sourceName} · 約{article.readingMinutes}分</span><button className="fi-title-button" type="button" onClick={() => onOpen(article)}><h3>{article.title}</h3></button><p className="fi-copy">{article.description}</p><p className="fi-explore-reason"><Compass size={14} />{novelTags.length ? `登録した関心にないタグ：${novelTags.slice(0, 2).join('・')}` : '未読記事から、媒体の偏りを抑えて選びました'}</p><div className="fi-tags">{article.tags.slice(0, 3).map(tag => <span key={tag}>{tag}</span>)}</div><div className="fi-explore-actions"><button className={`fi-button ${reader.feedback[article.id] === 'like' ? 'is-active' : ''}`} type="button" aria-pressed={reader.feedback[article.id] === 'like'} onClick={() => onFeedback(article, 'like')}><ThumbsUp size={15} />興味あり</button><button className="fi-button" type="button" onClick={() => onFeedback(article, 'dislike')}><ThumbsDown size={15} />興味なし</button><button className={`fi-icon-button ${saved ? 'is-active' : ''}`} type="button" aria-label={saved ? '保存を解除' : '記事を保存'} aria-pressed={saved} onClick={() => onSave(article)}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /></button></div><SourceButton article={article} onOpen={onOpen} /></article>; })}</div>
+    {!articles.length && <Empty>新しい視点になる未読記事がありません。いつもと違う分野のフィードを追加すると、新しい記事に出会えます。</Empty>}
+    <div className="fi-library-grid">{articles.map(article => { const novelTags = article.tags.filter(tag => !reader.preferences.interests.includes(tag)); const saved = reader.saved.includes(article.id); return <article className="fi-card fi-explore-article" key={article.id}><span className="fi-meta">{article.sourceName} · 約{article.readingMinutes}分</span><button className="fi-title-button" type="button" onClick={() => onOpen(article)}><h3>{article.title}</h3></button><p className="fi-copy">{article.description}</p><p className="fi-explore-reason"><Compass size={14} />{novelTags.length ? `興味にないトピック：${novelTags.slice(0, 2).join('・')}` : '未読記事から、フィードの偏りを抑えて選びました'}</p><div className="fi-tags">{article.tags.slice(0, 3).map(tag => <span key={tag}>{tag}</span>)}</div><div className="fi-explore-actions"><button className={`fi-button ${reader.feedback[article.id] === 'like' ? 'is-active' : ''}`} type="button" aria-pressed={reader.feedback[article.id] === 'like'} onClick={() => onFeedback(article, 'like')}><ThumbsUp size={15} />興味あり</button><button className="fi-button" type="button" onClick={() => onFeedback(article, 'dislike')}><ThumbsDown size={15} />興味なし</button><button className={`fi-icon-button ${saved ? 'is-active' : ''}`} type="button" aria-label={saved ? '保存を解除' : '記事を保存'} aria-pressed={saved} onClick={() => onSave(article)}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /></button></div><SourceButton article={article} onOpen={onOpen} /></article>; })}</div>
   </div>;
 }

@@ -16,7 +16,7 @@ export const MAX_EVER_SAVED = 3000;
 export type FeedStat = { arrived: number; saved: number };
 
 /**
- * 記事を「あとで読む」に入れたことを記録する。記事ごとに1件で、すでにあれば同じ reader を返す。
+ * 記事を保存したことを記録する。記事ごとに1件で、すでにあれば同じ reader を返す。
  * at は最初に記録した日時（並びは記録した順で、上限を超えたら先頭から捨てる）。
  */
 export function recordEverSaved(reader: ReaderState, articleId: string, now: Date): ReaderState {
@@ -26,7 +26,7 @@ export function recordEverSaved(reader: ReaderState, articleId: string, now: Dat
 }
 
 /**
- * 記事を「あとで読む」に保存する（save が true）か、保存を解除する（false）。
+ * 記事を保存する（save が true）か、保存を解除する（false）。
  * 保存するときは記事の本体を同期データへ写す。保存するときも解除するときも記録を残す
  * （記録が無いころに保存した記事も、解除したときに残せる）。
  */
@@ -38,7 +38,7 @@ export function setSaved(reader: ReaderState, article: Article, save: boolean, n
 }
 
 /**
- * フィードごとに、端末にためている記事の数（arrived）と、そのうち「あとで読む」に入れたことのある記事の数（saved）を数える。
+ * フィードごとに、端末にためている記事の数（arrived）と、そのうち保存したことのある記事の数（saved）を数える。
  * saved は今保存している記事と記録にある記事の和で、同じ記事は1回だけ数える。
  */
 export function feedStats(backlog: readonly Article[], reader: Pick<ReaderState, 'saved' | 'everSaved'>): Map<string, FeedStat> {

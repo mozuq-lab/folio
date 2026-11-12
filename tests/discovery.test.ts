@@ -48,12 +48,12 @@ test('日本語の似た見出しは同じ発表だけをまとめる', () => {
   assert.deepEqual(clusterStories([a, b, c], [], now).map(c => c.articles.length).sort(), [1, 2]);
 });
 
-test('重要度は複数出典と鮮度と公共影響を根拠にし、不正な日付でも有限', () => {
+test('重要度は掲載したフィードの数と鮮度と公共影響を根拠にし、不正な日付でも有限', () => {
   const a = article('a', { title: 'Critical security vulnerability disclosed in Acme server' });
   const b = article('b', { title: a.title, sourceId: 'other' });
   const withCoverage = scoreImportance(a, [a, b], now);
   assert.ok(withCoverage.score > scoreImportance(a, [a], now).score);
-  assert.ok(withCoverage.reason.includes('出典'));
+  assert.ok(withCoverage.reason.includes('件のフィードが掲載'));
   assert.ok(withCoverage.reason.includes('公共'));
   assert.ok(scoreImportance(a, [a], now).score > scoreImportance({ ...a, publishedAt: '2020-01-01' }, [a], now).score);
   const invalid = article('bad', { publishedAt: 'broken' });
@@ -61,7 +61,7 @@ test('重要度は複数出典と鮮度と公共影響を根拠にし、不正�
   assert.equal(clusterStories([invalid], [], now)[0].latestAt, '');
 });
 
-test('同じ記事集合の再評価は内容・好みの付加情報から独立し、別集合の追加出典を反映する', () => {
+test('同じ記事集合の再評価は内容・好みの付加情報から独立し、別集合で掲載したフィードの追加を反映する', () => {
   const a = article('a', { title: 'OpenAI launches Atlas browser for Mac' });
   const sameSource = article('duplicate', { title: a.title, sourceId: a.sourceId });
   const collection = [a, sameSource];
@@ -83,14 +83,14 @@ test('同IDの別見出しを持つコピーに古い集約結果を適用しな
   assert.equal(scoreImportance(different, collection, now).score, 34);
 });
 
-test('探索では明示除外とdislikeとmuteとsampleを除き、関心外と出典分散を優先する', () => {
+test('新しい視点では明示除外とdislikeとmuteとsampleを除き、興味の外とフィードの分散を優先する', () => {
   const input = [article('known', { tags: ['AI'] }), article('novel', { tags: ['科学'], sourceId: 'one' }), article('novel2', { tags: ['科学'], sourceId: 'one' }), article('diverse', { tags: ['歴史'], sourceId: 'two' }), article('muted', { tags: ['投資'] }), article('bad'), article('sample', { isSample: true }), article('excluded')];
   const result = selectExploration(input, preferences, { bad: 'dislike' }, 2, ['excluded']);
   assert.deepEqual(result.map(a => a.id), ['novel', 'diverse']);
   assert.deepEqual(selectExploration(input, preferences, {}, 0), []);
 });
 
-test('読書プランは既読を除外し時間予算内で概要の抜粋と記事IDを保持する', () => {
+test('ダイジェストは既読を除外し時間予算内で概要の抜粋と記事IDを保持する', () => {
   const input = [article('read', { readingMinutes: 1 }), article('long', { readingMinutes: 10 }), article('fit', { readingMinutes: 2, description: '本文にある検証済みの概要。' }), article('short', { readingMinutes: 1 })];
   const plan = buildReadingPlan(input, 3, ['read']);
   assert.equal(plan.mode, 'extractive');

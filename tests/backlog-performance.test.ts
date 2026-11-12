@@ -43,15 +43,15 @@ test('30,000件でFor Youのおすすめを2,000ms以内に、件数にほぼ比
   assert.ok(large.ms < 2000, `rankPersonalized が ${large.ms.toFixed(0)}ms かかりました`);
   // 期間と件数が3倍なら、件数に比例する処理は約3倍、件数の2乗なら約9倍になる。マシンの速さに依らない検査。
   assert.ok(ratio < 5, `10,000件から30,000件で処理時間が ${ratio.toFixed(2)} 倍になりました`);
-  // 画面と同じく、おすすめを計算済みの記事（解析済み）から探索記事を選んで混ぜる。
+  // 画面と同じく、おすすめを計算済みの記事（解析済み）から新しい視点の記事を選んで混ぜる。
   const articles = large.input, ranked = large.value;
   const mix = bestOf(() => null, () => {
     const discoveries = selectExploration(applyNaturalProfile(articles, intelligence.profile), preferences, {}, 10, ranked.slice(0, 6).map(article => article.id));
     return mixExploration(ranked, discoveries, 20);
   });
-  t.diagnostic(`探索記事の選択と混ぜ込み 30,000件: ${mix.ms.toFixed(0)}ms`);
+  t.diagnostic(`新しい視点の選択と混ぜ込み 30,000件: ${mix.ms.toFixed(0)}ms`);
   assert.equal(mix.value.slice(0, 10).filter(article => article.isExploration).length, 2);
-  assert.ok(mix.ms < 500, `探索記事の選択と混ぜ込みが ${mix.ms.toFixed(0)}ms かかりました`);
+  assert.ok(mix.ms < 500, `新しい視点の選択と混ぜ込みが ${mix.ms.toFixed(0)}ms かかりました`);
 });
 
 test('7日分5,000件でニュースのまとまりを1,000ms以内に作る', t => {
@@ -70,7 +70,7 @@ test('7日分5,000件でニュースのまとまりを1,000ms以内に作る', t
 });
 
 // どれも件数に比例する処理で、件数の2乗にならないことを確かめる（検索は保存・メモ付きの記事だけが対象で、実際は数百件）。
-test('30,000件で新しい発見・読書プラン・検索をそれぞれ1,000ms以内に計算する', t => {
+test('30,000件で新しい視点・ダイジェスト・検索をそれぞれ1,000ms以内に計算する', t => {
   const make = () => {
     const articles = syntheticArticles(30_000, { now: NOW, seed: 11 });
     return { articles, readIds: articles.filter((_, i) => i % 2 === 0).map(article => article.id) };

@@ -43,7 +43,7 @@ export interface ReaderState {
   backlogMigratedAt?: string;
   /** 分類の並びと、各分類のフィードの並び。無ければ各フィードの category から作る（lib/folders.ts）。 */
   folders?: { name: string; feedIds: string[] }[];
-  /** 「あとで読む」に入れたことのある記事。記事ごとに1件で、保存を解除しても残す（lib/saved-history.ts）。 */
+  /** 保存したことのある記事。記事ごとに1件で、保存を解除しても残す（lib/saved-history.ts）。 */
   everSaved?: { id: string; at: string }[];
   feedback: Feedback;
   preferences: Preferences;

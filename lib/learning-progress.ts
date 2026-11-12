@@ -12,5 +12,5 @@ export interface LearningProgress { label: string; percent: number; description:
 export function learningProgress(count: number): LearningProgress {
   const n = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
   if (!n) return { label: 'はじめの一歩', percent: START, description: '記事の「興味あり」「興味なし」で、好みが伝わります。' };
-  return { label: '学習中', percent: Math.floor(START + (100 - START) * n / (n + HALF)), description: `${n}件のフィードバックを反映しています。` };
+  return { label: '学習中', percent: Math.floor(START + (100 - START) * n / (n + HALF)), description: `${n}件のリアクションを反映しています。` };
 }

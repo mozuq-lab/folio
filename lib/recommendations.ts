@@ -57,9 +57,9 @@ export function rankArticles(
           : matches.length
             ? `${matches.slice(0, 2).join('・')}への興味にマッチ`
             : learnedTopic
-              ? `最近の反応から、${learnedTopic}をおすすめ`
+              ? `最近のリアクションから、${learnedTopic}をおすすめ`
               : sourceWeight > 0
-                ? '関心を示したメディアからのおすすめ'
+                ? '「興味あり」にした記事のフィードからのおすすめ'
                 : ageHours < 24
                   ? '新しく届いた、発見につながる記事'
                   : 'いつもと少し違う視点を届けます';

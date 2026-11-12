@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { learningProgress } from '../lib/learning-progress.ts';
 
-test('フィードバックが無いときは、興味あり・興味なしの両方を案内する', () => {
+test('リアクションが無いときは、興味あり・興味なしの両方を案内する', () => {
   const progress = learningProgress(0);
   assert.equal(progress.label, 'はじめの一歩');
   assert.equal(progress.percent, 12);
@@ -10,10 +10,10 @@ test('フィードバックが無いときは、興味あり・興味なしの�
   assert.match(progress.description, /「興味なし」/);
 });
 
-test('フィードバックの件数を説明文に出す', () => {
+test('リアクションの件数を説明文に出す', () => {
   const progress = learningProgress(3);
   assert.equal(progress.label, '学習中');
-  assert.equal(progress.description, '3件のフィードバックを反映しています。');
+  assert.equal(progress.description, '3件のリアクションを反映しています。');
 });
 
 test('バーは件数が増えるほど伸び続け、満タンにはならない', () => {

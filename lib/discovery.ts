@@ -359,7 +359,7 @@ export function scoreImportance(article: Article, articles: Article[], now = Dat
   const coverage = Math.min(36, Math.max(0, sources - 1) * 12);
   const impact = /\b(?:critical|vulnerability|security|emergency|earthquake|outage|recall|legislation|election)\b|脆弱性|緊急|災害|地震|法改正|大規模障害|情報漏[洩えい]|リコール|選挙/.test(textOf(source)) ? 25 : 0;
   const score = Math.min(99, 10 + freshness + coverage + impact);
-  const reasons = [`${sources}出典での掲載`];
+  const reasons = [`${sources}件のフィードが掲載`];
   reasons.push(!published ? '公開日時は不明' : freshness ? '最近の公開' : '公開から時間が経過');
   if (impact) reasons.push('公共への影響・重大更新に関する語句あり');
   return { score, reason: `${reasons.join('。')}。字句と掲載状況による推定です。` };
@@ -470,14 +470,14 @@ export function selectExploration(articles: Article[], preferences: Preferences,
 
 export function buildReadingPlan(articles: Article[], budgetMinutes: number, readIds: string[] = []): DigestResult {
   const budget = Number.isFinite(budgetMinutes) ? Math.max(0, Math.min(30, Math.floor(budgetMinutes))) : 0;
-  const result: DigestResult = { title: `${budget}分の読書プラン`, overview: '記事の概要を抜粋した読書プランです。所要時間は元記事の目安です。', items: [], totalMinutes: 0, generatedAt: new Date().toISOString(), mode: 'extractive' };
+  const result: DigestResult = { title: `${budget}分のダイジェスト`, overview: '記事の概要を抜粋したダイジェストです。所要時間は元記事の目安です。', items: [], totalMinutes: 0, generatedAt: new Date().toISOString(), mode: 'extractive' };
   const excluded = new Set(readIds);
   for (const article of articles) {
     if (excluded.has(article.id)) continue;
     excluded.add(article.id);
     const minutes = Number.isFinite(article.readingMinutes) ? Math.max(1, Math.ceil(article.readingMinutes)) : 1;
     if (result.totalMinutes + minutes > budget) continue;
-    result.items.push({ articleId: article.id, summary: plain(article.description).slice(0, 400) || plain(article.title), takeaway: `${article.sourceName}の記事概要から抜粋`, minutes });
+    result.items.push({ articleId: article.id, summary: plain(article.description).slice(0, 400) || plain(article.title), takeaway: `${article.sourceName}の概要から抜粋`, minutes });
     result.totalMinutes += minutes;
   }
   return result;

@@ -111,7 +111,7 @@ export function FeedOrganizer(props: FeedOrganizerProps) {
     </ul>
 
     <div className="modal-section-title"><h3>購読中のフィード</h3><span>{feeds.length}件</span></div>
-    {props.stats && feeds.length > 0 && <p className="organizer-help">「届いた記事」は、取得してためている直近90日分の記事の数です。「うち保存」は、そのうち一度でも「あとで読む」に入れた記事の数で、保存を解除した記事も数えます。</p>}
+    {props.stats && feeds.length > 0 && <p className="organizer-help">「届いた記事」は、取得してためている直近90日分の記事の数です。「うち保存」は、そのうち一度でも保存した記事の数で、保存を解除した記事も数えます。</p>}
     {feeds.length > 0 && <div className="feed-search"><Search size={14} /><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="フィード名またはURLで検索" aria-label="購読中のフィードを検索" /></div>}
     <div className="manage-feeds">
       {!feeds.length && <p className="muted">購読中のフィードはありません。上から追加できます。</p>}
